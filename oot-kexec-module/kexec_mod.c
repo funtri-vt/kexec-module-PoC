@@ -186,6 +186,13 @@ static int setup_zero_page(void)
         initrd_phys_dest = 0x2000000; 
         *(uint32_t *)(zp + 0x218) = (uint32_t)initrd_phys_dest; 
         *(uint32_t *)(zp + 0x21C) = (uint32_t)loaded_initrd.size;
+
+        /* CRITICAL 6.12 FIX: Modern 64-bit kernels combine this with ext_ramdisk_image 
+         * at offset 0x0C0 to support >4GB addresses. We MUST explicitly zero this out 
+         * so it doesn't append garbage and look for the ramdisk in the wrong galaxy! */
+        *(uint32_t *)(zp + 0x0C0) = 0; /* ext_ramdisk_image */
+        *(uint32_t *)(zp + 0x0C4) = 0; /* ext_ramdisk_size */
+
         printk(KERN_INFO "kexec: Configured target initrd at physical address: 0x%lx\n", initrd_phys_dest);
     }
 
