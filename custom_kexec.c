@@ -63,7 +63,7 @@ int main(int argc, char *argv[])
 
     const char *kernel_path = "/boot/target_bzImage";
     const char *initrd_path = "/boot/target_initrd.cpio.gz";
-    const char *cmdline = "console=ttyS0,115200 earlyprintk=serial,ttyS0,115200 root=/dev/ram0 debug";
+    const char *cmdline = "console=tty0 earlyprintk=vga root=/dev/ram0 debug";
     printf("========================================================\n");
     printf("   Starting Custom Kexec User-Space Loader\n");
     printf("========================================================\n");
