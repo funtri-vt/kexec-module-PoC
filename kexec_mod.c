@@ -17,7 +17,7 @@
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Developer");
 MODULE_DESCRIPTION("Custom Out-of-Tree Kexec with Scatter-Gather Trampoline");
-MODULE_VERSION("6.1");
+MODULE_VERSION("6.2");
 
 #define PAGE_SIZE_4K 4096
 
@@ -127,6 +127,17 @@ static int setup_zero_page(void)
     /* Inject the active screen_info to prevent display corruption */
     if (ptr_screen_info) {
         memcpy(zp, ptr_screen_info, sizeof(struct screen_info));
+    } else {
+        /* Fallback: Hardcode generic 80x25 VGA Text Mode parameters */
+        struct screen_info *si = (struct screen_info *)zp;
+        si->orig_x = 0;
+        si->orig_y = 0;
+        si->orig_video_mode = 3;
+        si->orig_video_cols = 80;
+        si->orig_video_lines = 25;
+        si->orig_video_ega_bx = 3;
+        si->orig_video_isVGA = 1; /* 1 = Standard VGA Text Mode */
+        si->orig_video_points = 16;
     }
 
     if (zp[0x202] != 'H' || zp[0x203] != 'd' || zp[0x204] != 'r' || zp[0x205] != 'S') {
