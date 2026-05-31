@@ -7,7 +7,7 @@
 #include <sys/stat.h>   /* For stat() */
 
 /* Include our shared IOCTL definitions */
-#include "../kexec_ioctl.h"
+#include "kexec_ioctl.h"
 
 /* * Helper function to read a complete binary file into a newly allocated heap buffer.
  * It returns the pointer to the buffer, and writes the size of the file to 'size_out'.
@@ -63,7 +63,9 @@ int main(int argc, char *argv[])
 
     const char *kernel_path = "/boot/target_bzImage";
     const char *initrd_path = "/boot/target_initrd.cpio.gz";
-    const char *cmdline = "console=ttyS0 console=tty0 earlyprintk=vga root=/dev/ram0 debug nokalsr";
+    /* Command line fully updated to fix TTY dropouts, disable KASLR, and physically hammer the keyboard controller */
+    const char *cmdline = "console=tty0 console=ttyS0,115200 root=/dev/ram0 debug nokaslr reset_devices i8042.reset i8042.nomux i8042.nopnp i8042.noloop";
+
     printf("========================================================\n");
     printf("   Starting Custom Kexec User-Space Loader\n");
     printf("========================================================\n");
