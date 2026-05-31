@@ -12,7 +12,7 @@
 #include <asm/io.h>
 #include <asm/pgtable.h>
 
-#include "kexec_ioctl.h"
+#include "../kexec_ioctl.h"
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Developer");
