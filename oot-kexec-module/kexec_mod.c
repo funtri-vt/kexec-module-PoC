@@ -12,12 +12,13 @@
 #include <asm/io.h>
 #include <asm/pgtable.h>
 
+/* Use the relative path as specified by the synchronized directory layout */
 #include "../kexec_ioctl.h"
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Developer");
 MODULE_DESCRIPTION("Custom Out-of-Tree Kexec with Scatter-Gather Trampoline");
-MODULE_VERSION("6.2");
+MODULE_VERSION("6.6");
 
 #define PAGE_SIZE_4K 4096
 
@@ -37,6 +38,7 @@ static size_t kernel_pm_offset = 0; /* Offset to the 32-bit protected-mode paylo
 /* We allocate one contiguous page specifically for the x86 "Zero Page" (boot_params) */
 static void *zero_page_virt = NULL;
 static unsigned long zero_page_phys = 0;
+static unsigned long initrd_phys_dest = 0x2000000; /* Safe default: 32MB physical */
 
 /* Hardware shutdown function pointers resolved via kallsyms */
 static void (*ptr_device_shutdown)(void) = NULL;
@@ -151,12 +153,40 @@ static int setup_zero_page(void)
     kernel_pm_offset = (setup_sects + 1) * 512;
     printk(KERN_INFO "kexec: Calculated protected-mode payload offset: %zu bytes\n", kernel_pm_offset);
 
+    /* CRITICAL 6.12 FIX: Provide a valid E820 Physical Memory Map.
+     * Modern kernels will instantly panic if e820_entries == 0.
+     * We hardcode a generic 256MB QEMU map based on standard PC architecture.
+     */
+    zp[0x1e8] = 4; /* Number of E820 entries */
+
+    /* Entry 0: 0x0 to 0x9FC00 (Usable Low RAM) */
+    *((__u64 *)(zp + 0x2d0)) = 0x0ULL;
+    *((__u64 *)(zp + 0x2d8)) = 0x9FC00ULL;
+    *((__u32 *)(zp + 0x2e0)) = 1;
+
+    /* Entry 1: 0x9FC00 to 0xA0000 (Reserved) */
+    *((__u64 *)(zp + 0x2d0 + 20)) = 0x9FC00ULL;
+    *((__u64 *)(zp + 0x2d8 + 20)) = 0x400ULL;
+    *((__u32 *)(zp + 0x2e0 + 20)) = 2;
+
+    /* Entry 2: 0xF0000 to 0x100000 (Reserved) */
+    *((__u64 *)(zp + 0x2d0 + 40)) = 0xF0000ULL;
+    *((__u64 *)(zp + 0x2d8 + 40)) = 0x10000ULL;
+    *((__u32 *)(zp + 0x2e0 + 40)) = 2;
+
+    /* Entry 3: 0x100000 to 0x10000000 (Usable High RAM - covers up to 256MB) */
+    *((__u64 *)(zp + 0x2d0 + 60)) = 0x100000ULL;
+    *((__u64 *)(zp + 0x2d8 + 60)) = 0xFEE0000ULL;
+    *((__u32 *)(zp + 0x2e0 + 60)) = 1;
+
     zp[0x210] = 0xFF; /* Type of loader */
     
     if (loaded_initrd.size > 0) {
-        /* Pack the initrd physically tight behind the 8.2MB kernel at 10MB */
-        *(uint32_t *)(zp + 0x218) = 0xA00000; 
+        /* Place the initramfs safely at 32MB (0x2000000). */
+        initrd_phys_dest = 0x2000000; 
+        *(uint32_t *)(zp + 0x218) = (uint32_t)initrd_phys_dest; 
         *(uint32_t *)(zp + 0x21C) = (uint32_t)loaded_initrd.size;
+        printk(KERN_INFO "kexec: Configured target initrd at physical address: 0x%lx\n", initrd_phys_dest);
     }
 
     if (kernel_cmdline) {
@@ -177,17 +207,16 @@ static void execute_trampoline(void)
     unsigned long low_page_phys;
     unsigned long cr3_phys, cr4_val;
     unsigned long *pgd, *pud, *pmd;
+    unsigned long *p4d = NULL;
     size_t bytes_to_copy, src_offset;
 
-    /* --- PHASE 1: SAFE ALLOCATIONS & STUB BUILDING (Interrupts ON) --- */
+    /* --- PHASE 1: SAFE ALLOCATIONS & STUB BUILDING (Interrupts ON, Scheduling Active) --- */
     low_page_virt = __get_free_page(GFP_KERNEL | GFP_DMA | __GFP_ZERO);
     if (!low_page_virt) {
         printk(KERN_ERR "kexec: Failed to allocate transition page!\n");
         return;
     }
     low_page_phys = virt_to_phys((void *)low_page_virt);
-
-    printk(KERN_INFO "kexec: Low transition page at Phys: 0x%lx\n", low_page_phys);
 
     pud = (unsigned long *)__get_free_page(GFP_KERNEL | __GFP_ZERO);
     pmd = (unsigned long *)__get_free_page(GFP_KERNEL | __GFP_ZERO);
@@ -196,22 +225,34 @@ static void execute_trampoline(void)
     asm volatile("mov %%cr4, %0" : "=r" (cr4_val));
     cr3_phys &= ~0xFFFUL; /* Mask out PCID bits */
 
-    /* Create eight 2MB Huge Pages (16MB total) */
-    for (i = 0; i < 8; i++) {
+    /* Pre-allocate a 5-level paging transition page if 5-level paging (LA57) is enabled */
+    if (cr4_val & (1 << 12)) { 
+        p4d = (unsigned long *)__get_free_page(GFP_KERNEL | __GFP_ZERO);
+        if (!p4d) {
+            printk(KERN_ERR "kexec: Failed to allocate 5-level paging page!\n");
+            free_page(low_page_virt);
+            free_page((unsigned long)pud);
+            free_page((unsigned long)pmd);
+            return;
+        }
+    }
+
+    if (!pud || !pmd) {
+        printk(KERN_ERR "kexec: Failed to allocate transition page-table nodes!\n");
+        if (low_page_virt) free_page(low_page_virt);
+        if (pud) free_page((unsigned long)pud);
+        if (pmd) free_page((unsigned long)pmd);
+        if (p4d) free_page((unsigned long)p4d);
+        return;
+    }
+
+    /* Create 64 huge page entries of 2MB each inside our PMD.
+     * This expands our identity map limit to 128MB.
+     */
+    for (i = 0; i < 64; i++) {
         pmd[i] = (i * 0x200000) | 0x83; /* Present, Read/Write, HugePage */
     }
     pud[0] = virt_to_phys(pmd) | 0x3;
-
-    /* Detect 4-level vs 5-level paging dynamically */
-    if (cr4_val & (1 << 12)) { 
-        unsigned long *p4d = (unsigned long *)__get_free_page(GFP_KERNEL | __GFP_ZERO);
-        p4d[0] = virt_to_phys(pud) | 0x3;
-        pgd = (unsigned long *)phys_to_virt(cr3_phys);
-        pgd[0] = virt_to_phys(p4d) | 0x3;
-    } else {
-        pgd = (unsigned long *)phys_to_virt(cr3_phys);
-        pgd[0] = virt_to_phys(pud) | 0x3;
-    }
 
     /* Build the 32-bit GDT */
     unsigned long *gdt = (unsigned long *)(low_page_virt + 2048);
@@ -277,6 +318,14 @@ static void execute_trampoline(void)
     unsigned int zp_phys = (unsigned int)zero_page_phys;
     memcpy(&stub[offset], &zp_phys, 4); offset += 4;
 
+    /* CRITICAL 6.12 STACK STABILITY FIX:
+     * Explicitly configure the 32-bit stack pointer ESP to point to a reliable, standard,
+     * hardcoded physical memory address (e.g., 0x90000) right before the jump. 
+     */
+    stub[offset++] = 0xbc; /* mov esp, imm32 */
+    unsigned int stable_boot_stack = 0x90000;
+    memcpy(&stub[offset], &stable_boot_stack, 4); offset += 4;
+
     /* Clear Boot Registers */
     stub[offset++] = 0x31; stub[offset++] = 0xc0;
     stub[offset++] = 0x31; stub[offset++] = 0xdb;
@@ -289,6 +338,8 @@ static void execute_trampoline(void)
     stub[offset++] = 0xb8; stub[offset++] = 0x00; stub[offset++] = 0x00; stub[offset++] = 0x10; stub[offset++] = 0x00;
     stub[offset++] = 0xff; stub[offset++] = 0xe0;
 
+    wbinvd(); /* Flush machine code to memory */
+
     /* --- PHASE 2: SYSTEM TEARDOWN --- */
     printk(KERN_INFO "kexec: Quiescing core systems...\n");
     if (ptr_lapic_shutdown) {
@@ -299,7 +350,7 @@ static void execute_trampoline(void)
     printk(KERN_INFO "kexec: Point of no return. Disabling local IRQs...\n");
     local_irq_disable();
 
-    /* --- PHASE 3: SAFE COPYING (Interrupts OFF, NO kmalloc, NO kmap, NO printk) --- */
+    /* --- PHASE 3: SAFE COPYING (Interrupts OFF, NO malloc/sleep calls allowed) --- */
     
     dest = (unsigned char *)phys_to_virt(0x10000);
     strcpy(dest, kernel_cmdline);
@@ -335,14 +386,24 @@ static void execute_trampoline(void)
     }
 
     if (loaded_initrd.size > 0) {
-        dest = (unsigned char *)phys_to_virt(0xA00000);
+        /* Pack the initramfs safely high in memory at 32MB */
+        dest = (unsigned char *)phys_to_virt(initrd_phys_dest);
         for (i = 0; i < loaded_initrd.nr_pages; i++) {
             void *src = phys_to_virt(loaded_initrd.phys_addrs[i]);
             memcpy(dest + (i * PAGE_SIZE_4K), src, PAGE_SIZE_4K);
         }
     }
 
-    /* --- PHASE 4: INJECT IDENTITY MAP & JUMP --- */
+    /* --- PHASE 4: INJECT IDENTITY MAP & JUMP (NO dynamic allocations allowed here!) --- */
+    pgd = (unsigned long *)phys_to_virt(cr3_phys);
+    
+    if (p4d) { 
+        p4d[0] = virt_to_phys(pud) | 0x3;
+        pgd[0] = virt_to_phys(p4d) | 0x3;
+    } else {
+        pgd[0] = virt_to_phys(pud) | 0x3;
+    }
+
     asm volatile("mov %0, %%cr3" :: "r" (cr3_phys) : "memory");
 
     asm volatile(
@@ -351,6 +412,8 @@ static void execute_trampoline(void)
         "mov %%rax, %%cr4\n\t"
         ::: "rax", "memory"
     );
+
+    printk(KERN_INFO "kexec: Trampoline primed. Executing identity-mapped jump...\n");
 
     /* Blastoff with mandatory hardware cache flush so our physical writes hit main RAM */
     asm volatile(
