@@ -63,7 +63,7 @@ int main(int argc, char *argv[])
 
     const char *kernel_path = "/boot/target_bzImage";
     const char *initrd_path = "/boot/target_initrd.cpio.gz";
-    /* Command line fully updated to fix TTY dropouts, disable KASLR, and physically hammer the keyboard controller */
+    /* Command line fully updated to fix TTY dropouts, and physically hammer the keyboard controller */
     const char *cmdline = "console=tty0 console=ttyS0,115200 root=/dev/ram0 debug reset_devices i8042.reset i8042.nomux i8042.nopnp i8042.noloop";
 
     printf("========================================================\n");
