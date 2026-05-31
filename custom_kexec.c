@@ -7,7 +7,7 @@
 #include <sys/stat.h>   /* For stat() */
 
 /* Include our shared IOCTL definitions */
-#include "kexec_ioctl.h"
+#include "../kexec_ioctl.h"
 
 /* * Helper function to read a complete binary file into a newly allocated heap buffer.
  * It returns the pointer to the buffer, and writes the size of the file to 'size_out'.
