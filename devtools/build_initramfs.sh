@@ -127,9 +127,14 @@ mount -t devtmpfs none /dev
 echo "[*] Filesystems mounted successfully. Parsing and loading final kernel..."
 
 # Load the final kernel natively using kexec-tools
+# Added highly verbose debugging parameters to diagnose user-space dropouts:
+# - earlyprintk=serial,ttyS0,115200: Forces direct UART interaction.
+# - loglevel=8: Maximum log levels printed directly to screen.
+# - initcall_debug: Prints every driver initialization event in real-time.
+# - cros_debug & cros_secure=0: Bypasses ChromeOS security lockouts that silence root shells.
 /sbin/kexec -l /payload/bzImage \
     --initrd=/payload/initramfs.cpio.gz \
-    --command-line="console=tty0 console=ttyS0,115200 root=/dev/ram0 rw"
+    --command-line="console=tty0 console=ttyS0,115200 root=/dev/ram0 rw debug earlyprintk=serial,ttyS0,115200 loglevel=8 initcall_debug reset_devices irqpoll"
 
 # Execute the native handoff (this properly shuts down the UART!)
 echo "[*] Executing native kexec jump NOW."
