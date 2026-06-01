@@ -134,7 +134,7 @@ echo "[*] Filesystems mounted successfully. Parsing and loading final kernel..."
 # - cros_debug & cros_secure=0: Bypasses ChromeOS security lockouts that silence root shells.
 /sbin/kexec -l /payload/bzImage \
     --initrd=/payload/initramfs.cpio.gz \
-    --command-line="console=tty0 console=ttyS0,115200 root=/dev/ram0 rw debug earlyprintk=serial,ttyS0,115200 loglevel=8 initcall_debug reset_devices irqpoll"
+    --command-line="console=tty0 console=ttyS0,115200 root=/dev/ram0 rw debug earlyprintk=serial,ttyS0,115200 loglevel=8 initcall_debug reset_devices irqpoll rdinit=/bin/sh"
 
 # Execute the native handoff (this properly shuts down the UART!)
 echo "[*] Executing native kexec jump NOW."
