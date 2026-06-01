@@ -100,7 +100,6 @@ fi
 
 # 2. Add the native kexec-tools binary (Overwriting the busybox kexec symlink if it exists)
 cp "$KEXEC_STATIC_BIN" "$INTERMEDIATE_BUILD_DIR/sbin/kexec"
-chmod +x "$INTERMEDIATE_BUILD_DIR/sbin/kexec"
 
 # 3. Inject the Final Payloads into the Matryoshka Pocket
 echo "[*] Injecting Final 6.12 Payloads into /payload pocket..."
@@ -140,12 +139,24 @@ echo "[*] Executing native kexec jump NOW."
 echo "[-] FATAL: kexec jump failed!"
 while true; do sleep 1; done
 EOF
-chmod +x "$INTERMEDIATE_BUILD_DIR/init"
 
 # 5. Pack the Intermediate Ramdisk
 echo "[*] Packaging intermediate_initrd.cpio.gz (This may take a moment)..."
+
+# ==============================================================================
+# PERMISSION SLEDGEHAMMER
+# Force correct execution bits so the new kernel doesn't throw EACCES (-13)
+# ==============================================================================
+echo "[*] Enforcing correct executable permissions..."
+chmod 755 "$INTERMEDIATE_BUILD_DIR/init"
+chmod -R 755 "$INTERMEDIATE_BUILD_DIR/bin" "$INTERMEDIATE_BUILD_DIR/sbin" 2>/dev/null || true
+if [ -d "$INTERMEDIATE_BUILD_DIR/usr" ]; then
+    chmod -R 755 "$INTERMEDIATE_BUILD_DIR/usr" 2>/dev/null || true
+fi
+
 cd "$INTERMEDIATE_BUILD_DIR"
-find . -print0 | cpio --null -ov --format=newc | gzip -9 > "$INTERMEDIATE_CPIO"
+# The --owner root:root flag ensures the kernel sees the files as natively owned
+find . -print0 | cpio --null -ov --format=newc --owner root:root | gzip -9 > "$INTERMEDIATE_CPIO"
 cd "$WORKSPACE"
 
 # Clean up build dir
@@ -175,7 +186,9 @@ cp "$INTERMEDIATE_CPIO" "boot/target_initrd.cpio.gz"
 
 # 3. Pack the final Host Ramdisk
 echo "[*] Packaging final host initramfs..."
-find . -print0 | cpio --null -ov --format=newc | gzip -9 > "$WORKSPACE/initramfs.cpio.gz"
+# Ensure the host init is executable as well
+if [ -f "init" ]; then chmod 755 init; fi
+find . -print0 | cpio --null -ov --format=newc --owner root:root | gzip -9 > "$WORKSPACE/initramfs.cpio.gz"
 
 echo "=========================================================="
 echo "[SUCCESS] Three-Stage Pipeline Completed Successfully!"
