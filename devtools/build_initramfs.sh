@@ -2,97 +2,171 @@
 # Exit immediately if any command fails
 set -e
 
+# ==============================================================================
+#  THREE-STAGE "MATRYOSHKA" KEXEC BUILD PIPELINE
+# ==============================================================================
+# This script builds a nested boot environment to cleanly hand off hardware state.
+# 
+# ARCHITECTURE:
+# 1. Host Rootfs: Runs on Legacy kernel. Contains `custom_kexec` & module.
+# 2. Intermediate Rootfs: A tiny "automaton" rootfs that runs on the 4.14 kernel.
+#    It blindly loads the final kernel using the native `kexec` tool and jumps.
+# 3. Final Payload: The actual 6.12 ChromeOS Kernel and Rootfs.
+#
+# PREREQUISITES (Ensure these exist before running):
+# - Host BusyBox compiled at `busybox/_install`
+# - Static kexec-tools binary at `kexec-tools/build/sbin/kexec`
+# - Custom kexec module at `oot-kexec-module/kexec_mod.ko`
+# - Custom kexec usermode tool at `usermode/custom_kexec`
+# - Intermediate (Trampoline) Kernel 4.14 at `intermediate_kernel/arch/x86/boot/bzImage`
+# - Final Target Kernel 6.12 at `final_kernel/arch/x86/boot/bzImage`
+# - Final Target Rootfs (ChromeOS) at `final_rootfs.cpio.gz`
+# ==============================================================================
+
 # Dynamically calculate the workspace root folder relative to this script's directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-BUSYBOX_DIR="$WORKSPACE/busybox"
-INSTALL_DIR="$BUSYBOX_DIR/_install"
-TARGET_KERNEL_SRC="$WORKSPACE/kernel2/arch/x86/boot/bzImage"
-
-# Sources of our custom built components
-MODULE_SRC="$WORKSPACE/oot-kexec-module/kexec_mod.ko"
-USERMODE_SRC="$WORKSPACE/usermode/custom_kexec"
-
 echo "=========================================================="
-echo " Starting Automated Nested Initramfs Build Pipeline"
+echo " Starting Three-Stage Kexec Build Pipeline"
 echo "=========================================================="
 echo "[*] Project Workspace: $WORKSPACE"
 
-if [ ! -d "$INSTALL_DIR" ]; then
-    echo "[-] Error: BusyBox install directory not found at $INSTALL_DIR"
-    echo "    Please build BusyBox first using 'make install'."
-    exit 1
-fi
+# --- DEFINE ASSET PATHS ---
+HOST_INSTALL_DIR="$WORKSPACE/busybox/_install"
+
+MODULE_SRC="$WORKSPACE/oot-kexec-module/kexec_mod.ko"
+USERMODE_SRC="$WORKSPACE/usermode/custom_kexec"
+
+# Tools and payloads for the Intermediate Stage
+KEXEC_STATIC_BIN="$WORKSPACE/kexec-tools/build/sbin/kexec" # Update path if needed
+INTERMEDIATE_KERNEL="$WORKSPACE/intermediate_kernel/arch/x86/boot/bzImage"
+
+# The final destination
+FINAL_KERNEL="$WORKSPACE/final_kernel/arch/x86/boot/bzImage"
+FINAL_ROOTFS="$WORKSPACE/final_rootfs.cpio.gz" # Your actual operational ChromeOS rootfs
 
 # --- PRE-FLIGHT COMPILATION CHECKS ---
 MISSING_ASSETS=0
 
-if [ ! -f "$MODULE_SRC" ]; then
-    echo "[-] Error: Kernel module not found at: $MODULE_SRC"
-    echo "    Please compile it by running 'make' inside 'oot-kexec-module/'."
-    MISSING_ASSETS=1
-fi
+echo "[*] Running pre-flight asset checks..."
 
-if [ ! -f "$USERMODE_SRC" ]; then
-    echo "[-] Error: Usermode binary not found at: $USERMODE_SRC"
-    echo "    Please compile it by running 'gcc -static -o custom_kexec custom_kexec.c' inside 'usermode/'."
-    MISSING_ASSETS=1
-fi
+check_file() {
+    if [ ! -e "$1" ]; then
+        echo "[-] Error: Missing $2 at: $1"
+        MISSING_ASSETS=1
+    else
+        echo "  [+] Found $2"
+    fi
+}
+
+check_file "$HOST_INSTALL_DIR" "Host BusyBox _install dir"
+check_file "$MODULE_SRC" "Custom kexec module"
+check_file "$USERMODE_SRC" "Usermode loader binary"
+check_file "$KEXEC_STATIC_BIN" "Static kexec-tools binary"
+check_file "$INTERMEDIATE_KERNEL" "Intermediate 4.14 Kernel"
+check_file "$FINAL_KERNEL" "Final 6.12 Kernel"
+check_file "$FINAL_ROOTFS" "Final Target Rootfs archive"
 
 if [ $MISSING_ASSETS -eq 1 ]; then
-    echo "[-] Aborting initramfs build due to missing compiled assets."
+    echo "=========================================================="
+    echo "[-] Aborting initramfs build due to missing assets."
+    echo "    Please compile or place the missing files at the paths above."
     exit 1
 fi
 
-# Ensure necessary system directories exist inside BusyBox target
-mkdir -p "$INSTALL_DIR/lib"
-mkdir -p "$INSTALL_DIR/bin"
-mkdir -p "$INSTALL_DIR/boot"
+# ==============================================================================
+# STAGE 1: BUILD THE INTERMEDIATE RAMDISK (The Automaton)
+# ==============================================================================
+INTERMEDIATE_BUILD_DIR="$WORKSPACE/build_intermediate"
+INTERMEDIATE_CPIO="$WORKSPACE/intermediate_initrd.cpio.gz"
 
-# --- COPY CUSTOM COMPONENTS ---
-echo "[*] Pre-loading custom kexec module into target filesystem..."
-cp "$MODULE_SRC" "$INSTALL_DIR/lib/kexec_mod.ko"
+echo "[*] Phase 1: Building the Intermediate (Automaton) Rootfs..."
+rm -rf "$INTERMEDIATE_BUILD_DIR"
+mkdir -p "$INTERMEDIATE_BUILD_DIR"/{bin,sbin,dev,proc,sys,payload}
 
-echo "[*] Pre-loading custom loader binary into target filesystem..."
-cp "$USERMODE_SRC" "$INSTALL_DIR/bin/custom_kexec"
+# 1. Provide minimal binaries (Re-use host busybox assuming it's static)
+cp "$HOST_INSTALL_DIR/bin/busybox" "$INTERMEDIATE_BUILD_DIR/bin/busybox"
+# Create essential symlink
+ln -s busybox "$INTERMEDIATE_BUILD_DIR/bin/sh"
 
-# Navigate to the BusyBox install directory
-cd "$INSTALL_DIR"
-echo "[*] Working directory switched to BusyBox root: $(pwd)"
+# 2. Add the native kexec-tools binary
+cp "$KEXEC_STATIC_BIN" "$INTERMEDIATE_BUILD_DIR/sbin/kexec"
+chmod +x "$INTERMEDIATE_BUILD_DIR/sbin/kexec"
 
-# --- NESTED CPIO STAGE ---
-# Clean out old target boot payloads to prevent infinite recursion
-echo "[*] Clearing out previous nested boot structures..."
+# 3. Inject the Final Payloads into the Matryoshka Pocket
+echo "[*] Injecting Final 6.12 Payloads into /payload pocket..."
+cp "$FINAL_KERNEL" "$INTERMEDIATE_BUILD_DIR/payload/bzImage"
+cp "$FINAL_ROOTFS" "$INTERMEDIATE_BUILD_DIR/payload/initramfs.cpio.gz"
+
+# 4. Generate the Automated /init Script
+echo "[*] Generating blind automated /init script..."
+cat << 'EOF' > "$INTERMEDIATE_BUILD_DIR/init"
+#!/bin/sh
+# Mount minimal filesystems
+mkdir -p /proc /sys /dev
+mount -t proc none /proc
+mount -t sysfs none /sys
+mount -t devtmpfs none /dev
+
+# Let the kernel logs know we are alive
+echo "<2>[AUTOMATON] =========================================" > /dev/kmsg
+echo "<2>[AUTOMATON] Stage 2 Trampoline Init Executing!       " > /dev/kmsg
+echo "<2>[AUTOMATON] Hardware state isolated.                 " > /dev/kmsg
+echo "<2>[AUTOMATON] =========================================" > /dev/kmsg
+
+# Load the final kernel natively using kexec-tools
+echo "<2>[AUTOMATON] Parsing and loading final kernel...      " > /dev/kmsg
+/sbin/kexec -l /payload/bzImage \
+    --initrd=/payload/initramfs.cpio.gz \
+    --command-line="console=tty0 console=ttyS0,115200 root=/dev/ram0 rw"
+
+# Execute the native handoff (this properly shuts down the UART!)
+echo "<2>[AUTOMATON] Executing native kexec jump NOW.         " > /dev/kmsg
+/sbin/kexec -e
+
+# We should never reach this point
+echo "<2>[AUTOMATON] FATAL: kexec jump failed!" > /dev/kmsg
+while true; do sleep 1; done
+EOF
+chmod +x "$INTERMEDIATE_BUILD_DIR/init"
+
+# 5. Pack the Intermediate Ramdisk
+echo "[*] Packaging intermediate_initrd.cpio.gz (This may take a moment)..."
+cd "$INTERMEDIATE_BUILD_DIR"
+find . -print0 | cpio --null -ov --format=newc | gzip -9 > "$INTERMEDIATE_CPIO"
+cd "$WORKSPACE"
+
+# Clean up build dir
+rm -rf "$INTERMEDIATE_BUILD_DIR"
+
+# ==============================================================================
+# STAGE 2: BUILD THE FINAL HOST RAMDISK
+# ==============================================================================
+echo "[*] Phase 2: Building the Host Launcher Rootfs..."
+cd "$HOST_INSTALL_DIR"
+
+mkdir -p lib bin boot
+
+# Clean out old payloads
 rm -f boot/target_bzImage
 rm -f boot/target_initrd.cpio.gz
 
-# Package the clean BusyBox filesystem (now containing custom loader/modules)
-# into a temporary target ramdisk file
-echo "[*] Generating compressed target_initrd.cpio.gz..."
-find . -print0 | cpio --null -ov --format=newc | gzip -9 > "$BUSYBOX_DIR/target_initrd.cpio.gz"
-echo "[+] Target ramdisk successfully built."
+# 1. Load Custom Kexec Assets
+echo "[*] Injecting custom kexec module and loader binary..."
+cp "$MODULE_SRC" "lib/kexec_mod.ko"
+cp "$USERMODE_SRC" "bin/custom_kexec"
 
-# --- STAGE TARGET PAYLOADS FOR HOST BOOT ---
-echo "[*] Locating target kernel..."
-if [ -f "$TARGET_KERNEL_SRC" ]; then
-    cp "$TARGET_KERNEL_SRC" boot/target_bzImage
-    echo "[+] Copied target bzImage from absolute path."
-else
-    # Fallback to relative paths
-    cp ../../kernel2/arch/x86/boot/bzImage boot/target_bzImage
-    echo "[+] Copied target bzImage from relative path."
-fi
+# 2. Stage the Intermediate Kernel and Ramdisk
+echo "[*] Staging Intermediate 4.14 kernel and ramdisk into /boot..."
+cp "$INTERMEDIATE_KERNEL" "boot/target_bzImage"
+cp "$INTERMEDIATE_CPIO" "boot/target_initrd.cpio.gz"
 
-# Move the newly compiled nested ramdisk into our host's boot folder
-echo "[*] Copying nested target_initrd.cpio.gz into host boot/ directory..."
-mv "$BUSYBOX_DIR/target_initrd.cpio.gz" boot/target_initrd.cpio.gz
-
-# --- BUILD FINAL HOST RAMDISK ---
+# 3. Pack the final Host Ramdisk
 echo "[*] Packaging final host initramfs..."
 find . -print0 | cpio --null -ov --format=newc | gzip -9 > "$WORKSPACE/initramfs.cpio.gz"
 
 echo "=========================================================="
-echo "[SUCCESS] Nested pipeline completed successfully!"
-echo "Your bootable host initramfs is located at: $WORKSPACE/initramfs.cpio.gz"
+echo "[SUCCESS] Three-Stage Pipeline Completed Successfully!"
+echo "Your bootable Host initramfs is located at: $WORKSPACE/initramfs.cpio.gz"
 echo "=========================================================="
