@@ -83,14 +83,22 @@ INTERMEDIATE_CPIO="$WORKSPACE/intermediate_initrd.cpio.gz"
 
 echo "[*] Phase 1: Building the Intermediate (Automaton) Rootfs..."
 rm -rf "$INTERMEDIATE_BUILD_DIR"
-mkdir -p "$INTERMEDIATE_BUILD_DIR"/{bin,sbin,dev,proc,sys,payload}
+mkdir -p "$INTERMEDIATE_BUILD_DIR"/{dev,proc,sys,payload}
 
-# 1. Provide minimal binaries (Re-use host busybox assuming it's static)
-cp "$HOST_INSTALL_DIR/bin/busybox" "$INTERMEDIATE_BUILD_DIR/bin/busybox"
-# Create essential symlink
-ln -s busybox "$INTERMEDIATE_BUILD_DIR/bin/sh"
+# 1. Provide minimal binaries (Copy all symlinks from the host)
+echo "[*] Copying BusyBox utilities to intermediate rootfs..."
+cp -a "$HOST_INSTALL_DIR/bin" "$INTERMEDIATE_BUILD_DIR/"
+cp -a "$HOST_INSTALL_DIR/sbin" "$INTERMEDIATE_BUILD_DIR/"
+if [ -d "$HOST_INSTALL_DIR/usr" ]; then
+    cp -a "$HOST_INSTALL_DIR/usr" "$INTERMEDIATE_BUILD_DIR/"
+fi
 
-# 2. Add the native kexec-tools binary
+# Ensure /bin/sh exists just in case
+if [ ! -e "$INTERMEDIATE_BUILD_DIR/bin/sh" ]; then
+    ln -s busybox "$INTERMEDIATE_BUILD_DIR/bin/sh"
+fi
+
+# 2. Add the native kexec-tools binary (Overwriting the busybox kexec symlink if it exists)
 cp "$KEXEC_STATIC_BIN" "$INTERMEDIATE_BUILD_DIR/sbin/kexec"
 chmod +x "$INTERMEDIATE_BUILD_DIR/sbin/kexec"
 
@@ -103,30 +111,33 @@ cp "$FINAL_ROOTFS" "$INTERMEDIATE_BUILD_DIR/payload/initramfs.cpio.gz"
 echo "[*] Generating blind automated /init script..."
 cat << 'EOF' > "$INTERMEDIATE_BUILD_DIR/init"
 #!/bin/sh
+
+# NO REDIRECTION. This uses the kernel's inherited stdout/stderr console.
+echo ""
+echo "===================================================="
+echo "  SUCCESS: PIECE OF CAKE! WE ARE ALIVE IN USERSPACE!"
+echo "===================================================="
+echo ""
+
 # Mount minimal filesystems
 mkdir -p /proc /sys /dev
 mount -t proc none /proc
 mount -t sysfs none /sys
 mount -t devtmpfs none /dev
 
-# Let the kernel logs know we are alive
-echo "<2>[AUTOMATON] =========================================" > /dev/kmsg
-echo "<2>[AUTOMATON] Stage 2 Trampoline Init Executing!       " > /dev/kmsg
-echo "<2>[AUTOMATON] Hardware state isolated.                 " > /dev/kmsg
-echo "<2>[AUTOMATON] =========================================" > /dev/kmsg
+echo "[*] Filesystems mounted successfully. Parsing and loading final kernel..."
 
 # Load the final kernel natively using kexec-tools
-echo "<2>[AUTOMATON] Parsing and loading final kernel...      " > /dev/kmsg
 /sbin/kexec -l /payload/bzImage \
     --initrd=/payload/initramfs.cpio.gz \
     --command-line="console=tty0 console=ttyS0,115200 root=/dev/ram0 rw"
 
 # Execute the native handoff (this properly shuts down the UART!)
-echo "<2>[AUTOMATON] Executing native kexec jump NOW.         " > /dev/kmsg
+echo "[*] Executing native kexec jump NOW."
 /sbin/kexec -e
 
 # We should never reach this point
-echo "<2>[AUTOMATON] FATAL: kexec jump failed!" > /dev/kmsg
+echo "[-] FATAL: kexec jump failed!"
 while true; do sleep 1; done
 EOF
 chmod +x "$INTERMEDIATE_BUILD_DIR/init"
