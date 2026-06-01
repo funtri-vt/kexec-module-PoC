@@ -18,7 +18,7 @@
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Developer");
 MODULE_DESCRIPTION("Custom Out-of-Tree Kexec with Scatter-Gather Trampoline");
-MODULE_VERSION("6.6");
+MODULE_VERSION("6.7");
 
 #define PAGE_SIZE_4K 4096
 
@@ -38,7 +38,7 @@ static size_t kernel_pm_offset = 0; /* Offset to the 32-bit protected-mode paylo
 /* We allocate one contiguous page specifically for the x86 "Zero Page" (boot_params) */
 static void *zero_page_virt = NULL;
 static unsigned long zero_page_phys = 0;
-static unsigned long initrd_phys_dest = 0x2000000; /* Safe default: 32MB physical */
+static unsigned long initrd_phys_dest = 0x8000000; /* Safe default: 128MB physical */
 
 /* Hardware shutdown function pointers resolved via kallsyms */
 static void (*ptr_device_shutdown)(void) = NULL;
@@ -182,14 +182,13 @@ static int setup_zero_page(void)
     zp[0x210] = 0xFF; /* Type of loader */
     
     if (loaded_initrd.size > 0) {
-        /* Place the initramfs safely at 32MB (0x2000000). */
-        initrd_phys_dest = 0x2000000; 
+        /* Evacuate the initramfs to 128MB (0x8000000) to clear the giant 6.12 decompression path */
+        initrd_phys_dest = 0x8000000; 
         *(uint32_t *)(zp + 0x218) = (uint32_t)initrd_phys_dest; 
         *(uint32_t *)(zp + 0x21C) = (uint32_t)loaded_initrd.size;
 
         /* CRITICAL 6.12 FIX: Modern 64-bit kernels combine this with ext_ramdisk_image 
-         * at offset 0x0C0 to support >4GB addresses. We MUST explicitly zero this out 
-         * so it doesn't append garbage and look for the ramdisk in the wrong galaxy! */
+         * at offset 0x0C0 to support >4GB addresses. We MUST explicitly zero this out. */
         *(uint32_t *)(zp + 0x0C0) = 0; /* ext_ramdisk_image */
         *(uint32_t *)(zp + 0x0C4) = 0; /* ext_ramdisk_size */
 
@@ -253,10 +252,10 @@ static void execute_trampoline(void)
         return;
     }
 
-    /* Create 64 huge page entries of 2MB each inside our PMD.
-     * This expands our identity map limit to 128MB.
+    /* Create 128 huge page entries of 2MB each inside our PMD.
+     * This expands our identity map limit to 256MB, ensuring the 128MB initrd dest is safely mapped.
      */
-    for (i = 0; i < 64; i++) {
+    for (i = 0; i < 128; i++) {
         pmd[i] = (i * 0x200000) | 0x83; /* Present, Read/Write, HugePage */
     }
     pud[0] = virt_to_phys(pmd) | 0x3;
@@ -393,7 +392,7 @@ static void execute_trampoline(void)
     }
 
     if (loaded_initrd.size > 0) {
-        /* Pack the initramfs safely high in memory at 32MB */
+        /* Pack the initramfs safely high in memory at 128MB */
         dest = (unsigned char *)phys_to_virt(initrd_phys_dest);
         for (i = 0; i < loaded_initrd.nr_pages; i++) {
             void *src = phys_to_virt(loaded_initrd.phys_addrs[i]);
