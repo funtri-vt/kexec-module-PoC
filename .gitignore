@@ -3,6 +3,8 @@ kernel/
 intermediate_kernel/
 final_kernel/
 kexec-tools/
+busybox/
+final_rootfs_busybox/
 
 #output files
 usermode/custom_kexec
@@ -13,3 +15,6 @@ Module.symvers
 kexec_mod.Module
 modules.order
 kexec_mod.mod*
+initramfs.cpio.gz
+final_rootfs.cpio.gz
+intermediate_initrd.cpio.gz
