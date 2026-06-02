@@ -2,3 +2,4 @@ usermode/custom_kexec
 kernel/
 intermediate_kernel/
 final_kernel/
+kexec-tools/
