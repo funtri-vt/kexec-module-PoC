@@ -14,6 +14,37 @@ SHIM_IMG="$1"
 INITRAMFS_SRC="$WORKSPACE/initramfs.cpio.gz"
 MOUNT_DIR="/tmp/shimboot_mount"
 
+# Track if loop devices have been mapped to ensure safe cleanup
+MAPPED=0
+
+# --- EMERGENCY CLEANUP TRAP ---
+# This ensures that even if any step fails or is aborted (Ctrl+C),
+# we never leak mount points or loop devices.
+cleanup() {
+    echo ""
+    echo "=========================================================="
+    echo "[*] Performing teardown and cleaning up environment..."
+    
+    if [ -d "$MOUNT_DIR" ]; then
+        if mountpoint -q "$MOUNT_DIR" 2>/dev/null; then
+            echo "  [*] Unmounting $MOUNT_DIR..."
+            umount -f "$MOUNT_DIR" 2>/dev/null || umount -l "$MOUNT_DIR" 2>/dev/null || true
+        fi
+        echo "  [*] Removing temporary mount folder..."
+        rm -rf "$MOUNT_DIR"
+    fi
+
+    if [ $MAPPED -eq 1 ]; then
+        echo "  [*] Releasing loopback partitions for $SHIM_IMG..."
+        kpartx -d "$SHIM_IMG" 2>/dev/null || true
+    fi
+    echo "  [+] Cleanup complete."
+    echo "=========================================================="
+}
+
+# Bind our cleanup function to the shell EXIT signal
+trap cleanup EXIT
+
 # --- PRE-FLIGHT CHECKS ---
 if [ -z "$SHIM_IMG" ]; then
     echo "[-] Error: Please specify the path to your shimboot .bin file."
@@ -70,8 +101,10 @@ echo "[*] Step 1: Mapping GPT partitions from the raw image..."
 MAP_OUTPUT=$(kpartx -av "$SHIM_IMG")
 echo "$MAP_OUTPUT"
 
+# Mark loop devices as active/mapped so the trap clean-up covers them from this point forward
+MAPPED=1
+
 # We parse the output to find loop device assignments.
-# Example output line: "add map loop0p5 (253:0): 0 2097152 linear /dev/loop0 108544"
 LOOP_DEV=$(echo "$MAP_OUTPUT" | grep -o 'loop[0-9]\+' | head -n1)
 
 if [ -z "$LOOP_DEV" ]; then
@@ -102,7 +135,6 @@ if ! blkid "$TARGET_PART" | grep -q "ext4"; then
         echo "  [+] Found alternative ext4 rootfs partition at: $TARGET_PART"
     else
         echo "[-] Error: Could not locate an ext4 partition to mount inside the image."
-        kpartx -d "$SHIM_IMG"
         exit 1
     fi
 fi
@@ -118,16 +150,27 @@ mkdir -p "$MOUNT_DIR"
 mount "$TARGET_PART" "$MOUNT_DIR"
 echo "  [+] Mounted successfully at $MOUNT_DIR"
 
-# --- STEP 3: UNPACK THE PAYLOAD ---
+# --- STEP 3: UNPACK THE PAYLOAD WITH CLEANUP ---
 echo "[*] Step 3: Unpacking initramfs filesystem directly into rootfs..."
 
 # We navigate into the mount directory
 cd "$MOUNT_DIR"
 
-# We safely extract the entire host initramfs archive into the root of partition 5.
-# This ensures that /init, /lib/kexec_mod.ko, and /bin/custom_kexec land cleanly.
-# --no-absolute-filenames avoids writing outside of the target mount directory.
-zcat "$INITRAMFS_SRC" | cpio -idmv --no-absolute-filenames
+# Safely clean out old files to prevent stale binaries/configs from lingering.
+# Guard prevents accidental rm -rf execution on the host root directory.
+echo "  [*] Purging old rootfs structures from previous runs..."
+if [ "$PWD" = "$MOUNT_DIR" ] && [ "$MOUNT_DIR" != "/" ] && [ -n "$MOUNT_DIR" ]; then
+    # Delete everything except the system lost+found folder to keep ext4 happy
+    find . -mindepth 1 -maxdepth 1 ! -name 'lost+found' -exec rm -rf {} +
+    echo "  [+] Old rootfs cleared."
+else
+    echo "[-] Error: Directory guard mismatch! Wiping aborted for system safety."
+    exit 1
+fi
+
+# We extract the entire host initramfs archive.
+# Added the -u (--unconditional) flag to force overwriting of any remaining filesystem structures.
+zcat "$INITRAMFS_SRC" | cpio -idmuv --no-absolute-filenames
 
 echo "  [+] Extraction complete."
 
@@ -143,26 +186,18 @@ for file in "init" "lib/kexec_mod.ko" "bin/custom_kexec" "boot/target_bzImage" "
     fi
 done
 
-# --- STEP 4: CLEAN UP AND FLUSH WRITES ---
-echo "[*] Step 4: Unmounting and cleaning up loop devices..."
+# --- STEP 4: FLUSH WRITES ---
+echo "[*] Step 4: Syncing changes..."
 cd "$WORKSPACE"
 
 # Sync guarantees any cached filesystem operations are flushed directly into the physical .bin blocks
 sync
 
-# Safely unmount
-umount "$MOUNT_DIR"
-rm -rf "$MOUNT_DIR"
-
-# Detach kpartx maps
-kpartx -d "$SHIM_IMG"
-
-echo "=========================================================="
 if [ $CHECK_FAILED -eq 1 ]; then
     echo "[!] WARNING: The payload was injected, but some files were missing."
     echo "    Double-check your build output files."
+    exit 1
 else
     echo "[SUCCESS] Payload successfully injected into $SHIM_IMG!"
     echo "          You are ready to write this file to your bootable USB!"
 fi
-echo "=========================================================="
