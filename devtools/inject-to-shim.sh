@@ -44,6 +44,24 @@ echo "[*] Shim Image: $SHIM_IMG"
 echo "[*] Source Payload: $INITRAMFS_SRC"
 echo ""
 
+# --- STEP 0: DYNAMICALLY EXPAND THE RAW IMAGE & PARTITION ---
+echo "[*] Step 0: Expanding raw shimboot image to ensure adequate space..."
+
+# 1. Expand the raw .bin image by 300MB to comfortably hold our multi-stage payloads
+truncate -s +300M "$SHIM_IMG"
+
+# 2. Relocate the GPT backup header to the new end of the file
+if command -v sgdisk >/dev/null 2>&1; then
+    sgdisk -e "$SHIM_IMG" >/dev/null 2>&1 || true
+fi
+
+# 3. Use parted to resize partition 5 to 100% of the newly allocated space
+if command -v parted >/dev/null 2>&1; then
+    parted -s "$SHIM_IMG" resizepart 5 100% || true
+else
+    echo "  [!] Warning: 'parted' tool not found. Skipping partition table resize."
+fi
+
 # --- STEP 1: DETECT AND MOUNT GPT PARTITIONS VIA KPARTX ---
 echo "[*] Step 1: Mapping GPT partitions from the raw image..."
 
@@ -88,6 +106,11 @@ if ! blkid "$TARGET_PART" | grep -q "ext4"; then
         exit 1
     fi
 fi
+
+# --- STEP 1.5: GROW THE EXT4 FILESYSTEM ---
+echo "[*] Step 1.5: Expanding the ext4 filesystem to utilize the newly added space..."
+e2fsck -fp "$TARGET_PART" || true
+resize2fs "$TARGET_PART"
 
 # --- STEP 2: MOUNT TARGET PARTITION ---
 echo "[*] Step 2: Mounting partition..."

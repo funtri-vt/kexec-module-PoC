@@ -18,3 +18,5 @@ kexec_mod.mod*
 initramfs.cpio.gz
 final_rootfs.cpio.gz
 intermediate_initrd.cpio.gz
+shimboot_*.bin
+shimboot_*.zip
