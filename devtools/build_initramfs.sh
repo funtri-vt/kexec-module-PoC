@@ -111,33 +111,32 @@ echo "[*] Generating blind automated /init script..."
 cat << 'EOF' > "$INTERMEDIATE_BUILD_DIR/init"
 #!/bin/sh
 
-# NO REDIRECTION. This uses the kernel's inherited stdout/stderr console.
-echo ""
-echo "===================================================="
-echo "  SUCCESS: PIECE OF CAKE! WE ARE ALIVE IN USERSPACE!"
-echo "===================================================="
-echo ""
-
-# Mount minimal filesystems
+# Mount minimal filesystems FIRST so we have device nodes to write to
 mkdir -p /proc /sys /dev
 mount -t proc none /proc
 mount -t sysfs none /sys
 mount -t devtmpfs none /dev
 
-echo "[*] Filesystems mounted successfully. Parsing and loading final kernel..."
+# Now route everything to the kernel log so we can actually see it!
+exec >/dev/kmsg 2>&1
+
+echo ""
+echo "===================================================="
+echo "  [AUTOMATON] SUCCESS: WE ARE ALIVE IN STAGE 2!"
+echo "===================================================="
+echo ""
+
+echo "[AUTOMATON] Parsing and loading final 6.12 kernel..."
 
 # Load the final kernel natively using kexec-tools
-# Added highly verbose debugging parameters to diagnose user-space dropouts:
-# - earlyprintk=serial,ttyS0,115200: Forces direct UART interaction.
-# - loglevel=8: Maximum log levels printed directly to screen.
-# - initcall_debug: Prints every driver initialization event in real-time.
-# - cros_debug & cros_secure=0: Bypasses ChromeOS security lockouts that silence root shells.
+# - Restored console=tty0 to prevent sys_open("/dev/console") from hanging PID 1
+# - Added i8042 reset flags to prevent input controller freezes in QEMU.
 /sbin/kexec -l /payload/bzImage \
     --initrd=/payload/initramfs.cpio.gz \
-    --command-line="console=tty0 console=ttyS0,115200 root=/dev/ram0 rw debug earlyprintk=serial,ttyS0,115200 loglevel=8 initcall_debug reset_devices irqpoll rdinit=/bin/sh"
+    --command-line="console=tty0 console=ttyS0,115200 root=/dev/ram0 rw debug earlyprintk=serial,ttyS0,115200 loglevel=8 initcall_debug cros_debug cros_secure=0 reset_devices irqpoll i8042.reset i8042.nomux noapic"
 
 # Execute the native handoff (this properly shuts down the UART!)
-echo "[*] Executing native kexec jump NOW."
+echo "[AUTOMATON] Executing native kexec jump NOW."
 /sbin/kexec -e
 
 # We should never reach this point
