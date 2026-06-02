@@ -16,7 +16,7 @@
 export PATH="/bin:/sbin:/usr/bin:/usr/sbin"
 export HOME="/"
 export TERM="linux"
-export PS1="Vanilla-7.0# "
+export PS1="Final Shell# "
 
 # 4. Clear any stale serial line settings to ensure clean input/output
 /bin/busybox stty -F /dev/ttyS0 clocal sane 2>/dev/null || true
