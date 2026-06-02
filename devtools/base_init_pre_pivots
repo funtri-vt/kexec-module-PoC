@@ -1,0 +1,10 @@
+#!/bin/sh
+
+# 1. Create mount points and mount essential filesystems (Required for both kernels)
+mkdir -p /proc /sys /dev
+mount -t proc none /proc
+mount -t sysfs none /sys
+mount -t devtmpfs none /dev
+
+insmod lib/kexec_mod.ko
+custom_kexec
