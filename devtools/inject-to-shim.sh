@@ -79,7 +79,7 @@ echo ""
 echo "[*] Step 0: Expanding raw shimboot image to ensure adequate space..."
 
 # 1. Expand the raw .bin image by 300MB to comfortably hold our multi-stage payloads
-truncate -s +300M "$SHIM_IMG"
+truncate -s +1G "$SHIM_IMG"
 
 # 2. Relocate the GPT backup header to the new end of the file
 if command -v sgdisk >/dev/null 2>&1; then
