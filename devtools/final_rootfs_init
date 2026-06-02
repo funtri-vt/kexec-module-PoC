@@ -1,0 +1,33 @@
+#!/bin/sh
+
+# 1. Mount essential filesystems
+/bin/busybox mkdir -p /proc /sys /dev /dev/pts
+/bin/busybox mount -t proc none /proc
+/bin/busybox mount -t sysfs none /sys
+/bin/busybox mount -t devtmpfs none /dev 2>/dev/null || true
+
+# 2. Print a welcome message to the kernel log
+/bin/busybox echo "==========================================" > /dev/kmsg
+/bin/busybox echo "   WELCOME TO THE VANILLA 7.0 SHELL" > /dev/kmsg
+/bin/busybox echo "   SPAWNING DIRECT SERIAL CONSOLE..." > /dev/kmsg
+/bin/busybox echo "==========================================" > /dev/kmsg
+
+# 3. Setup Environment
+export PATH="/bin:/sbin:/usr/bin:/usr/sbin"
+export HOME="/"
+export TERM="linux"
+export PS1="Vanilla-7.0# "
+
+# 4. Clear any stale serial line settings to ensure clean input/output
+/bin/busybox stty -F /dev/ttyS0 clocal sane 2>/dev/null || true
+
+# 5. Launch the shell!
+# We attempt cttyhack first as it establishes a true controlling terminal (enabling job control).
+# If cttyhack is not compiled into this busybox build, we fallback to direct redirection.
+echo ""
+echo "=========================================="
+echo "   WELCOME TO THE CHROMEOS 6.12 SHELL"
+echo "=========================================="
+echo ""
+
+exec /bin/busybox setsid /bin/busybox cttyhack /bin/sh || exec /bin/busybox sh -i </dev/ttyS0 >/dev/ttyS0 2>&1
