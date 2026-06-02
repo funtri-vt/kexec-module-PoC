@@ -1,5 +1,15 @@
-usermode/custom_kexec
+#directories
 kernel/
 intermediate_kernel/
 final_kernel/
 kexec-tools/
+
+#output files
+usermode/custom_kexec
+.kexec_mod.*
+kexec_mod.ko*
+kexec_mod.o
+Module.symvers
+kexec_mod.Module
+modules.order
+kexec_mod.mod*
