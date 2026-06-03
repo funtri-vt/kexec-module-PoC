@@ -84,11 +84,7 @@ HOST_KDIR="$WORKSPACE/host_kernel"
 mkdir -p "$HOST_KDIR"
 cd "$HOST_KDIR"
 
-# Smart git fetch to avoid downloading gigabytes of kernel history
-if [ ! -d ".git" ]; then
-    git init
-    git remote add origin "$CHROMEOS_KERNEL_REPO"
-fi
+DOWNLOAD_SUCCESS=0
 
 if [ -n "$COMMIT_HASH" ]; then
     echo "  [*] Resolving short commit $COMMIT_HASH to full 40-character SHA-1 via Google Gitiles..."
@@ -103,31 +99,53 @@ if [ -n "$COMMIT_HASH" ]; then
         COMMIT_TO_FETCH="$COMMIT_HASH"
     fi
 
-    echo "  [*] Fetching exact kernel commit to match Version Magic..."
-    # Attempt to fetch specific resolved commit directly.
-    if git fetch --depth 1 origin "$COMMIT_TO_FETCH" 2>/dev/null; then
-        echo "  [+] Direct shallow commit fetch succeeded."
-        git checkout FETCH_HEAD
+    # PRIMARY DOWNLOAD: Try downloading the source archive directly from Google Gitiles.
+    # This completely avoids all git checkout/fetch constraints on unreachable commits.
+    echo "  [*] Attempting direct source archive download from Google Gitiles..."
+    if curl -sL -f -o kernel_archive.tar.gz "https://chromium.googlesource.com/chromiumos/third_party/kernel/+archive/${COMMIT_TO_FETCH}.tar.gz"; then
+        echo "  [+] Archive downloaded successfully. Extracting source to $HOST_KDIR..."
+        tar -xzf kernel_archive.tar.gz
+        rm -f kernel_archive.tar.gz
+        DOWNLOAD_SUCCESS=1
     else
-        echo "  [!] Direct commit fetch failed. Checking if we can locate containing branch via Gerrit API..."
-        # Query Gerrit to find the specific release/board branch that contains our target commit
-        BRANCH_SUGGESTION=$(curl -s "https://chromium-review.googlesource.com/projects/chromiumos%2Fthird_party%2Fkernel/branches?contains=${COMMIT_TO_FETCH}" | sed 's/)]}'\''//' | grep -o -E '"ref": "refs/heads/[^"]+"' | head -n 1 | cut -d'"' -f4 | sed 's|refs/heads/||')
-        
-        if [ -n "$BRANCH_SUGGESTION" ]; then
-            echo "  [+] Found containing branch via Gerrit API: $BRANCH_SUGGESTION"
-            git fetch --depth 1 origin "$BRANCH_SUGGESTION"
-            git checkout "$COMMIT_TO_FETCH"
-        else
-            echo "  [!] No specific containing branch found. Falling back to fetching full history of branch: chromeos-$HOST_VERSION..."
-            # Fallback to fetching the entire main branch history so git can locate the commit locally
-            git fetch origin "chromeos-$HOST_VERSION"
-            git checkout "$COMMIT_TO_FETCH"
-        fi
+        echo "  [!] Direct archive download failed. Falling back to git database clone..."
     fi
-else
-    echo "  [*] Fetching kernel branch: chromeos-$HOST_VERSION..."
-    git fetch --depth 1 origin "chromeos-$HOST_VERSION"
-    git checkout FETCH_HEAD
+fi
+
+# FALLBACK METHOD: Standard git fetching if the Gitiles server archive generation is unavailable
+if [ $DOWNLOAD_SUCCESS -eq 0 ]; then
+    if [ ! -d ".git" ]; then
+        git init
+        git remote add origin "$CHROMEOS_KERNEL_REPO"
+    fi
+
+    if [ -n "$COMMIT_HASH" ]; then
+        echo "  [*] Fetching exact kernel commit to match Version Magic..."
+        # Attempt to fetch specific resolved commit directly.
+        if git fetch --depth 1 origin "$COMMIT_TO_FETCH" 2>/dev/null; then
+            echo "  [+] Direct shallow commit fetch succeeded."
+            git checkout FETCH_HEAD
+        else
+            echo "  [!] Direct commit fetch failed. Checking if we can locate containing branch via Gerrit API..."
+            # Query Gerrit to find the specific release/board branch that contains our target commit
+            BRANCH_SUGGESTION=$(curl -s "https://chromium-review.googlesource.com/projects/chromiumos%2Fthird_party%2Fkernel/branches?contains=${COMMIT_TO_FETCH}" | sed 's/)]}'\''//' | grep -o -E '"ref": "refs/heads/[^"]+"' | head -n 1 | cut -d'"' -f4 | sed 's|refs/heads/||')
+            
+            if [ -n "$BRANCH_SUGGESTION" ]; then
+                echo "  [+] Found containing branch via Gerrit API: $BRANCH_SUGGESTION"
+                git fetch --depth 1 origin "$BRANCH_SUGGESTION"
+                git checkout "$COMMIT_TO_FETCH"
+            else
+                echo "  [!] No specific containing branch found. Falling back to fetching full history of branch: chromeos-$HOST_VERSION..."
+                # Fallback to fetching the entire main branch history so git can locate the commit locally
+                git fetch origin "chromeos-$HOST_VERSION"
+                git checkout "$COMMIT_TO_FETCH"
+            fi
+        fi
+    else
+        echo "  [*] Fetching kernel branch: chromeos-$HOST_VERSION..."
+        git fetch --depth 1 origin "chromeos-$HOST_VERSION"
+        git checkout FETCH_HEAD
+    fi
 fi
 
 echo "  [*] Attempting to extract original .config from vmlinuz.bin..."
