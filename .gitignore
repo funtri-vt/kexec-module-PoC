@@ -6,6 +6,8 @@ kexec-tools/
 busybox/
 final_rootfs_busybox/
 host_kernel/
+patched-shimboot-image/
+extracted/
 
 #output files
 usermode/custom_kexec
