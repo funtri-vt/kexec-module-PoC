@@ -16,4 +16,4 @@ while [ ! -e /dev/custom_kexec ]; do
 done
 
 echo "[*] Triggering pivot..." > /dev/kmsg
-/bin/custom_kexec
+# /bin/custom_kexec
