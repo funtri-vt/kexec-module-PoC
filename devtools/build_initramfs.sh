@@ -20,6 +20,7 @@ set -e
 # - Static kexec-tools binary at `kexec-tools/build/sbin/kexec`
 # - Custom kexec module at `oot-kexec-module/kexec_mod.ko`
 # - Custom kexec usermode tool at `usermode/custom_kexec`
+# - Custom finit usermode tool at `usermode/finit_loader`
 # - Intermediate (Trampoline) Kernel at `intermediate_kernel/arch/x86/boot/bzImage`
 # - Final Target Kernel at `final_kernel/arch/x86/boot/bzImage`
 # - Final Target Rootfs base at `final_rootfs.cpio.gz`
@@ -39,6 +40,7 @@ HOST_INSTALL_DIR="$WORKSPACE/busybox/_install"
 
 MODULE_SRC="$WORKSPACE/oot-kexec-module/kexec_mod.ko"
 USERMODE_SRC="$WORKSPACE/usermode/custom_kexec"
+FINIT_USERMODE_SRC="$WORKSPACE/usermode/finit_loader"
 
 # Tools and payloads for the Intermediate Stage
 KEXEC_STATIC_BIN="$WORKSPACE/kexec-tools/build/sbin/kexec" 
@@ -181,9 +183,10 @@ rm -f boot/target_bzImage
 rm -f boot/target_initrd.cpio.gz
 
 # 1. Load Custom Kexec Assets
-echo "[*] Injecting custom kexec module and loader binary..."
+echo "[*] Injecting custom kexec module, loader binary, and finit binary..."
 cp "$MODULE_SRC" "lib/kexec_mod.ko"
 cp "$USERMODE_SRC" "bin/custom_kexec"
+cp "$FINIT_USERMODE_SRC" "bin/finit_loader"
 
 # 2. Stage the Intermediate Kernel and Ramdisk
 echo "[*] Staging Intermediate kernel and ramdisk into /boot..."
