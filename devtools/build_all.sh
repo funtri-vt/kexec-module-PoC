@@ -31,7 +31,7 @@ BUSYBOX_BRANCH="1_36_stable"
 cd "$WORKSPACE"
 
 # --- PHASE 2: DYNAMIC TARGET ANALYSIS (THE RMA SHIM) ---
-echo ">>> [Phase 2] Analyzing RMA Shim for Host Kernel Version..."
+echo ">>> [Phase 2] Analyzing RMA Shim for Host Kernel Version & Commit..."
 if [ ! -f "$SHIM_IMG_PATH" ]; then
     echo "[-] Error: Shim image not found at $SHIM_IMG_PATH!"
     echo "    Please place your downloaded shimboot.bin here."
@@ -48,31 +48,86 @@ dd if="$SHIM_IMG_PATH" of="temp_kern_a.bin" bs=512 skip="$PART2_START" count="$P
 # Extract the raw bzImage from the signed ChromeOS vblock wrapper
 echo "  [*] Stripping ChromeOS vblock to extract raw bzImage..."
 futility vbutil_kernel --get-vmlinuz temp_kern_a.bin --vmlinuz-out vmlinuz.bin
+rm temp_kern_a.bin
 
 # The 'file' utility natively parses the uncompressed x86 bzImage setup header to find the version string
-# Example file output: "vmlinuz.bin: Linux kernel x86 boot executable bzImage, version 4.14.214..."
-HOST_VERSION=$(file vmlinuz.bin | grep -o -E "version [0-9]+\.[0-9]+" | awk '{print $2}')
+FILE_OUTPUT=$(file vmlinuz.bin)
+echo "  [*] bzImage Header: $FILE_OUTPUT"
 
-rm temp_kern_a.bin vmlinuz.bin
+# Extract full version (e.g., 4.14.75-07790-ga53de141176c)
+FULL_VERSION=$(echo "$FILE_OUTPUT" | grep -o -E "version [^ ]+" | awk '{print $2}')
+HOST_VERSION=$(echo "$FULL_VERSION" | cut -d'.' -f1,2)
+
+# Extract git commit hash dynamically (e.g., a53de141176c)
+COMMIT_HASH=$(echo "$FULL_VERSION" | sed -n 's/.*-g\([0-9a-f]\{7,\}\).*/\1/p')
+
+# Check if Preemption is enabled in the version magic
+NEEDS_PREEMPT=0
+if echo "$FILE_OUTPUT" | grep -q -i "preempt"; then
+    NEEDS_PREEMPT=1
+fi
 
 if [ -z "$HOST_VERSION" ]; then
     echo "[-] Error: Could not determine host kernel version from the extracted bzImage!"
     exit 1
 fi
+
 echo "  [+] Discovered Target ChromeOS Kernel Version: $HOST_VERSION"
+if [ -n "$COMMIT_HASH" ]; then
+    echo "  [+] Discovered Exact Git Commit: $COMMIT_HASH"
+fi
 
 
 # --- PHASE 3: HOST KERNEL HEADERS PREP ---
-echo ">>> [Phase 3] Preparing Host Kernel Headers (ChromeOS $HOST_VERSION)..."
+echo ">>> [Phase 3] Preparing Host Kernel Headers..."
 HOST_KDIR="$WORKSPACE/host_kernel"
-if [ ! -d "$HOST_KDIR" ]; then
-    git clone --depth 1 -b "chromeos-$HOST_VERSION" "$CHROMEOS_KERNEL_REPO" "$HOST_KDIR"
-fi
+mkdir -p "$HOST_KDIR"
 cd "$HOST_KDIR"
-make defconfig
+
+# Smart git fetch to avoid downloading gigabytes of kernel history
+if [ ! -d ".git" ]; then
+    git init
+    git remote add origin "$CHROMEOS_KERNEL_REPO"
+fi
+
+if [ -n "$COMMIT_HASH" ]; then
+    echo "  [*] Fetching exact kernel commit to match Version Magic..."
+    # Attempt to fetch specific commit. If repo prevents shallow commit fetches, fallback to branch.
+    git fetch --depth 1 origin "$COMMIT_HASH" 2>/dev/null || git fetch --depth 1 origin "chromeos-$HOST_VERSION"
+    git checkout FETCH_HEAD
+else
+    echo "  [*] Fetching kernel branch: chromeos-$HOST_VERSION..."
+    git fetch --depth 1 origin "chromeos-$HOST_VERSION"
+    git checkout FETCH_HEAD
+fi
+
+echo "  [*] Attempting to extract original .config from vmlinuz.bin..."
+if ./scripts/extract-ikconfig "$WORKSPACE/vmlinuz.bin" > .config 2>/dev/null; then
+    echo "  [+] Success! Original .config ripped from kernel."
+    make olddefconfig
+else
+    echo "  [!] IKCONFIG not found. Falling back to default config..."
+    make defconfig
+    
+    # Manually match Version Magic if preempt was detected
+    if [ $NEEDS_PREEMPT -eq 1 ]; then
+        echo "  [*] Enabling CONFIG_PREEMPT to match version magic..."
+        ./scripts/config --enable CONFIG_PREEMPT
+        ./scripts/config --disable CONFIG_PREEMPT_NONE
+        make olddefconfig
+    fi
+fi
+
 # Force CONFIG_KEXEC off to mirror the locked-down environment
-sed -i 's/CONFIG_KEXEC=y/# CONFIG_KEXEC is not set/' .config
+echo "  [*] Disabling CONFIG_KEXEC to ensure module compatibility..."
+./scripts/config --disable CONFIG_KEXEC
+make olddefconfig
+
+echo "  [*] Generating module headers..."
 make modules_prepare -j"$CORES"
+
+# Clean up the extracted kernel image now that we have the headers/config
+rm "$WORKSPACE/vmlinuz.bin"
 
 
 # --- PHASE 4: INTERMEDIATE KERNEL BUILD (The Automaton) ---
@@ -131,11 +186,12 @@ make CONFIG_PREFIX="$WORKSPACE/final_rootfs_busybox/_install" install
 # --- PHASE 8: OUT-OF-TREE TOOLS COMPILATION ---
 echo ">>> [Phase 8] Compiling Out-Of-Tree Kexec Module & Usermode Loader..."
 cd "$WORKSPACE/oot-kexec-module"
+make clean || true
 # Pass our explicitly prepared ChromeOS headers path to the Makefile
 make KDIR="$HOST_KDIR"
 
 cd "$WORKSPACE/usermode"
-gcc -static -o custom_kexec custom_kexec.c
+gcc -static -o custom_kexec custom_kexec.c || gcc -static -o finit_loader finit_loader.c
 
 
 # --- PHASE 9: PAYLOAD ASSEMBLY & INJECTION ---
