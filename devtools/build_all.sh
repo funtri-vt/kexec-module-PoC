@@ -92,9 +92,16 @@ fi
 
 if [ -n "$COMMIT_HASH" ]; then
     echo "  [*] Fetching exact kernel commit to match Version Magic..."
-    # Attempt to fetch specific commit. If repo prevents shallow commit fetches, fallback to branch.
-    git fetch --depth 1 origin "$COMMIT_HASH" 2>/dev/null || git fetch --depth 1 origin "chromeos-$HOST_VERSION"
-    git checkout FETCH_HEAD
+    # Attempt to fetch specific commit.
+    if git fetch --depth 1 origin "$COMMIT_HASH" 2>/dev/null; then
+        echo "  [+] Direct shallow commit fetch succeeded."
+        git checkout FETCH_HEAD
+    else
+        echo "  [!] Direct commit fetch failed (likely server restriction). Fetching full branch history to locate commit..."
+        # Fetch the branch without depth limit so we actually get the older commit in the history
+        git fetch origin "chromeos-$HOST_VERSION"
+        git checkout "$COMMIT_HASH"
+    fi
 else
     echo "  [*] Fetching kernel branch: chromeos-$HOST_VERSION..."
     git fetch --depth 1 origin "chromeos-$HOST_VERSION"
@@ -127,7 +134,7 @@ echo "  [*] Generating module headers..."
 make modules_prepare -j"$CORES"
 
 # Clean up the extracted kernel image now that we have the headers/config
-rm "$WORKSPACE/vmlinuz.bin"
+rm -f "$WORKSPACE/vmlinuz.bin"
 
 
 # --- PHASE 4: INTERMEDIATE KERNEL BUILD (The Automaton) ---
