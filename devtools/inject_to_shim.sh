@@ -1,5 +1,5 @@
 #!/bin/bash
-# Script to mount a patched shimboot image, find partition 5 (or the rootfs partition),
+# Script to mount a patched shimboot image, find partition 4 (or the rootfs partition),
 # unpack our custom host initramfs directly into it, and safely detach.
 #
 # RUN THIS SCRIPT WITH SUDO: sudo ./devtools/inject_to_shim.sh <path_to_shim.bin>
@@ -75,32 +75,6 @@ echo "[*] Shim Image: $SHIM_IMG"
 echo "[*] Source Payload: $INITRAMFS_SRC"
 echo ""
 
-# --- STEP 0: DYNAMICALLY EXPAND THE RAW IMAGE & PARTITION ---
-echo "[*] Step 0: Expanding raw shimboot image to ensure adequate space..."
-
-# 1. Expand the raw .bin image by 1GB to comfortably hold our multi-stage payloads
-truncate -s +1G "$SHIM_IMG"
-
-# 2. Relocate the GPT backup header to the new end of the file
-if command -v sgdisk >/dev/null 2>&1; then
-    sgdisk -e "$SHIM_IMG" >/dev/null 2>&1 || true
-fi
-
-# 3. Use sfdisk to expand partition 5 to 100% of the newly allocated space.
-# "echo ', +'" tells sfdisk to leave the partition start alone and expand the size to max.
-echo "  [*] Expanding Partition 5 using sfdisk..."
-if command -v sfdisk >/dev/null 2>&1; then
-    echo ", +" | sfdisk -N 5 --force "$SHIM_IMG" >/dev/null 2>&1 || true
-else
-    echo "  [!] Error: 'sfdisk' tool not found. Cannot resize target partition."
-    exit 1
-fi
-
-# Inform kernel of partition changes
-if command -v udevadm >/dev/null 2>&1; then
-    udevadm settle || true
-fi
-
 # --- STEP 1: DETECT AND MOUNT GPT PARTITIONS VIA KPARTX ---
 echo "[*] Step 1: Mapping GPT partitions from the raw image..."
 
@@ -119,45 +93,30 @@ if [ -z "$LOOP_DEV" ]; then
     exit 1
 fi
 
-# Dynamically target Partition 5 (standard shimboot ext4 partition)
-TARGET_PART="/dev/mapper/${LOOP_DEV}p5"
+# We target Partition 4 as the primary destination for our payload injection
+TARGET_PART="/dev/mapper/${LOOP_DEV}p4"
 
-# Let's perform a safety check using blkid to confirm this is an ext4 partition
-echo "[*] Verifying partition properties of $TARGET_PART..."
-if ! blkid "$TARGET_PART" | grep -q "ext4"; then
-    echo "  [!] Warning: Partition 5 is not ext4. Searching GPT names for 'shimboot_rootfs'..."
-    
-    # Fallback search through all mapped loop partitions to find one labeled with shimboot_rootfs
-    FOUND_PART=""
-    for part in /dev/mapper/${LOOP_DEV}p*; do
-        if blkid "$part" | grep -q "ext4"; then
-            FOUND_PART="$part"
-            break
-        fi
-    done
-    
-    if [ -n "$FOUND_PART" ]; then
-        TARGET_PART="$FOUND_PART"
-        echo "  [+] Found alternative ext4 rootfs partition at: $TARGET_PART"
-    else
-        echo "[-] Error: Could not locate an ext4 partition to mount inside the image."
-        exit 1
-    fi
+# --- STEP 2: ENSURE FILE SYSTEM EXISTENCE & TYPE ON PARTITION 4 ---
+echo "[*] Checking filesystem state on $TARGET_PART..."
+FS_TYPE=$(blkid -o value -s TYPE "$TARGET_PART" || echo "none")
+
+if [ "$FS_TYPE" != "ext4" ]; then
+    echo "  [!] Destination partition 4 is currently formatted as '$FS_TYPE'. Creating new ext4 filesystem..."
+    # Format partition 4 with ext4 so we can cleanly write to it
+    mkfs.ext4 -F -F -O ^metadata_csum,^has_journal "$TARGET_PART"
+    echo "  [+] Partition 4 formatted successfully to ext4."
+else
+    echo "  [+] Verified Partition 4 is already ext4."
 fi
 
-# --- STEP 1.5: GROW THE EXT4 FILESYSTEM ---
-echo "[*] Step 1.5: Expanding the ext4 filesystem to utilize the newly added space..."
-e2fsck -fp "$TARGET_PART" || true
-resize2fs "$TARGET_PART"
-
-# --- STEP 2: MOUNT TARGET PARTITION ---
-echo "[*] Step 2: Mounting partition..."
+# --- STEP 3: MOUNT TARGET PARTITION ---
+echo "[*] Step 3: Mounting partition..."
 mkdir -p "$MOUNT_DIR"
 mount "$TARGET_PART" "$MOUNT_DIR"
 echo "  [+] Mounted successfully at $MOUNT_DIR"
 
-# --- STEP 3: UNPACK THE PAYLOAD WITH CLEANUP ---
-echo "[*] Step 3: Unpacking initramfs filesystem directly into rootfs..."
+# --- STEP 4: UNPACK THE PAYLOAD WITH CLEANUP ---
+echo "[*] Step 4: Unpacking initramfs filesystem directly into rootfs..."
 
 # We navigate into the mount directory
 cd "$MOUNT_DIR"
@@ -190,8 +149,8 @@ for file in "init" "lib/kexec_mod.ko" "bin/custom_kexec" "boot/target_bzImage" "
     fi
 done
 
-# --- STEP 4: FLUSH WRITES ---
-echo "[*] Step 4: Syncing changes..."
+# --- STEP 5: FLUSH WRITES ---
+echo "[*] Step 5: Syncing changes..."
 cd "$WORKSPACE"
 
 # Sync guarantees any cached filesystem operations are flushed directly into the physical .bin blocks
