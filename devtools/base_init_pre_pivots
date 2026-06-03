@@ -6,14 +6,14 @@ mount -t proc none /proc
 mount -t sysfs none /sys
 mount -t devtmpfs none /dev
 
-echo "[*] Loading kexec module..."
+echo "[*] Loading kexec module..." > /dev/kmsg
 /bin/finit_loader /lib/kexec_mod.ko
 
-echo "[*] Waiting for device node..."
+echo "[*] Waiting for device node..." > /dev/kmsg
 # Give devtmpfs a moment to populate the /dev directory
 while [ ! -e /dev/custom_kexec ]; do
     sleep 0.1
 done
 
-echo "[*] Triggering pivot..."
+echo "[*] Triggering pivot..." > /dev/kmsg
 /bin/custom_kexec
