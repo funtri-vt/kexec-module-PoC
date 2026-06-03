@@ -1,15 +1,19 @@
 #!/bin/bash
+# Master build script to compile all components and pack the final kexec payload.
 # Exit immediately if any command fails
 set -e
 
-# Dynamically calculate the workspace root folder
+# Dynamically calculate the workspace root folder relative to this script's directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE="$(cd "$SCRIPT_DIR/.." && pwd)"
-CORES=$(nproc)
+CORES=$(nproc) # Get number of CPU cores for fast compilation
 
 echo "=========================================================="
 echo "  MASTER ORCHESTRATOR: KEXEC 3-STAGE PIPELINE BUILDER"
 echo "=========================================================="
+echo "[*] Workspace: $WORKSPACE"
+echo "[*] Compiling with $CORES threads..."
+echo ""
 
 # ==============================================================================
 # CONFIGURATION VARIABLES (Edit these to customize your build sources)
@@ -50,23 +54,32 @@ echo "  [*] Stripping ChromeOS vblock to extract raw bzImage..."
 futility vbutil_kernel --get-vmlinuz temp_kern_a.bin --vmlinuz-out vmlinuz.bin
 rm temp_kern_a.bin
 
-# The 'file' utility natively parses the uncompressed x86 bzImage setup header to find the version string
-FILE_OUTPUT=$(file vmlinuz.bin)
-echo "  [*] bzImage Header: $FILE_OUTPUT"
+# Invoke our standalone detect_version_magic.sh script to parse and print debug info.
+# We also capture its stdout so we can cleanly pull out our parsed Makefile variables!
+echo "  [*] Invoking Version Magic Detector..."
+DETECTOR_OUT=$(bash "$WORKSPACE/devtools/detect_version_magic.sh")
 
-# Extract full version (e.g., 4.14.75-07790-ga53de141176c)
-FULL_VERSION=$(echo "$FILE_OUTPUT" | grep -o -E "version [^ ]+" | awk '{print $2}')
-HOST_VERSION=$(echo "$FULL_VERSION" | cut -d'.' -f1,2)
+# Print the beautiful diagnostic block straight to the build output
+echo "$DETECTOR_OUT"
 
-# Check if Preemption is enabled in the version magic
-NEEDS_PREEMPT=0
-if echo "$FILE_OUTPUT" | grep -q -i "preempt"; then
-    NEEDS_PREEMPT=1
+# Parse the variables printed by our detector script
+K_MAJ=$(echo "$DETECTOR_OUT" | grep "^VERSION" | awk -F'= ' '{print $2}' | tr -d ' ')
+K_MIN=$(echo "$DETECTOR_OUT" | grep "^PATCHLEVEL" | awk -F'= ' '{print $2}' | tr -d ' ')
+K_SUB=$(echo "$DETECTOR_OUT" | grep "^SUBLEVEL" | awk -F'= ' '{print $2}' | tr -d ' ')
+K_EXT=$(echo "$DETECTOR_OUT" | grep "^EXTRAVERSION" | awk -F'= ' '{print $2}' | tr -d ' ')
+
+if [ -z "$K_MAJ" ] || [ -z "$K_MIN" ]; then
+    echo "[-] Error: Version Magic Detector could not parse kernel version!"
+    exit 1
 fi
 
-if [ -z "$HOST_VERSION" ]; then
-    echo "[-] Error: Could not determine host kernel version from the extracted bzImage!"
-    exit 1
+FULL_VERSION="${K_MAJ}.${K_MIN}.${K_SUB}${K_EXT}"
+HOST_VERSION="${K_MAJ}.${K_MIN}"
+
+# Determine preemption requirements based on detector findings
+NEEDS_PREEMPT=0
+if echo "$DETECTOR_OUT" | grep -q "PREEMPT enabled"; then
+    NEEDS_PREEMPT=1
 fi
 
 echo "  [+] Discovered Target ChromeOS Kernel Version: $HOST_VERSION"
@@ -89,26 +102,18 @@ git fetch --depth 1 origin "chromeos-$HOST_VERSION"
 git checkout FETCH_HEAD
 
 # ==================================================================
-# THE SPOOFING HACK
-# We dynamically rewrite the top-level Kernel Makefile to force the
-# build system to generate headers matching our exact, hidden commit!
+# THE SPOOFING HACK & PREEMPTION / SCM OVERRIDES
 # ==================================================================
 echo "  [*] Spoofing Kernel Makefile to perfectly match Version Magic: $FULL_VERSION"
-K_MAJ=$(echo "$FULL_VERSION" | cut -d. -f1)
-K_MIN=$(echo "$FULL_VERSION" | cut -d. -f2)
-K_SUB=$(echo "$FULL_VERSION" | cut -d. -f3 | cut -d- -f1)
-
-# Safely extract everything after the first hyphen for EXTRAVERSION
-if echo "$FULL_VERSION" | grep -q "-"; then
-    K_EXT="-$(echo "$FULL_VERSION" | cut -d- -f2-)"
-else
-    K_EXT=""
-fi
-
 sed -i "s/^VERSION = .*/VERSION = $K_MAJ/" Makefile
 sed -i "s/^PATCHLEVEL = .*/PATCHLEVEL = $K_MIN/" Makefile
 sed -i "s/^SUBLEVEL = .*/SUBLEVEL = $K_SUB/" Makefile
 sed -i "s/^EXTRAVERSION = .*/EXTRAVERSION = $K_EXT/" Makefile
+
+# CRITICAL VERSION MATCHING FIX:
+# Force touch of .scmversion to prevent scripts/setlocalversion from appending a trailing '+' sign!
+echo "  [*] Writing SCM version override (.scmversion) to prevent '+' suffix..."
+touch .scmversion
 
 echo "  [*] Attempting to extract original .config from vmlinuz.bin..."
 if ./scripts/extract-ikconfig "$WORKSPACE/vmlinuz.bin" > .config 2>/dev/null; then
@@ -202,6 +207,7 @@ make KDIR="$HOST_KDIR"
 cd "$WORKSPACE/usermode"
 gcc -static -o custom_kexec custom_kexec.c 
 gcc -static -o finit_loader finit_loader.c
+
 
 # --- PHASE 9: PAYLOAD ASSEMBLY & INJECTION ---
 echo ">>> [Phase 9] Assembling nested payloads and injecting into Shim..."
