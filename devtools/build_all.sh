@@ -91,16 +91,38 @@ if [ ! -d ".git" ]; then
 fi
 
 if [ -n "$COMMIT_HASH" ]; then
+    echo "  [*] Resolving short commit $COMMIT_HASH to full 40-character SHA-1 via Google Gitiles..."
+    # Gitiles format=TEXT returns base64 encoded text. We decode it and get the second word of the first line.
+    FULL_SHA=$(curl -s "https://chromium.googlesource.com/chromiumos/third_party/kernel/+/${COMMIT_HASH}?format=TEXT" | base64 -d 2>/dev/null | head -n 1 | awk '{print $2}')
+    
+    if [ -n "$FULL_SHA" ] && [ ${#FULL_SHA} -eq 40 ]; then
+        echo "  [+] Resolved to full SHA-1: $FULL_SHA"
+        COMMIT_TO_FETCH="$FULL_SHA"
+    else
+        echo "  [!] Failed to resolve full SHA-1. Using short commit hash: $COMMIT_HASH"
+        COMMIT_TO_FETCH="$COMMIT_HASH"
+    fi
+
     echo "  [*] Fetching exact kernel commit to match Version Magic..."
-    # Attempt to fetch specific commit.
-    if git fetch --depth 1 origin "$COMMIT_HASH" 2>/dev/null; then
+    # Attempt to fetch specific resolved commit directly.
+    if git fetch --depth 1 origin "$COMMIT_TO_FETCH" 2>/dev/null; then
         echo "  [+] Direct shallow commit fetch succeeded."
         git checkout FETCH_HEAD
     else
-        echo "  [!] Direct commit fetch failed (likely server restriction). Fetching full branch history to locate commit..."
-        # Fetch the branch without depth limit so we actually get the older commit in the history
-        git fetch origin "chromeos-$HOST_VERSION"
-        git checkout "$COMMIT_HASH"
+        echo "  [!] Direct commit fetch failed. Checking if we can locate containing branch via Gerrit API..."
+        # Query Gerrit to find the specific release/board branch that contains our target commit
+        BRANCH_SUGGESTION=$(curl -s "https://chromium-review.googlesource.com/projects/chromiumos%2Fthird_party%2Fkernel/branches?contains=${COMMIT_TO_FETCH}" | sed 's/)]}'\''//' | grep -o -E '"ref": "refs/heads/[^"]+"' | head -n 1 | cut -d'"' -f4 | sed 's|refs/heads/||')
+        
+        if [ -n "$BRANCH_SUGGESTION" ]; then
+            echo "  [+] Found containing branch via Gerrit API: $BRANCH_SUGGESTION"
+            git fetch --depth 1 origin "$BRANCH_SUGGESTION"
+            git checkout "$COMMIT_TO_FETCH"
+        else
+            echo "  [!] No specific containing branch found. Falling back to fetching full history of branch: chromeos-$HOST_VERSION..."
+            # Fallback to fetching the entire main branch history so git can locate the commit locally
+            git fetch origin "chromeos-$HOST_VERSION"
+            git checkout "$COMMIT_TO_FETCH"
+        fi
     fi
 else
     echo "  [*] Fetching kernel branch: chromeos-$HOST_VERSION..."
