@@ -9,6 +9,7 @@ host_kernel/
 
 #output files
 usermode/custom_kexec
+usermode/finit_loader
 .kexec_mod.*
 kexec_mod.ko*
 kexec_mod.o
