@@ -5,6 +5,7 @@ final_kernel/
 kexec-tools/
 busybox/
 final_rootfs_busybox/
+host_kernel/
 
 #output files
 usermode/custom_kexec
