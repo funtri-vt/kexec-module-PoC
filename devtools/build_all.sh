@@ -200,7 +200,7 @@ make clean || true
 make KDIR="$HOST_KDIR"
 
 cd "$WORKSPACE/usermode"
-gcc -static -o custom_kexec custom_kexec.c || gcc -static -o finit_loader finit_loader.c
+gcc -static -o custom_kexec custom_kexec.c && gcc -static -o finit_loader finit_loader.c
 
 
 # --- PHASE 9: PAYLOAD ASSEMBLY & INJECTION ---
