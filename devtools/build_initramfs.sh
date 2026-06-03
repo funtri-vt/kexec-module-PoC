@@ -7,20 +7,22 @@ set -e
 # ==============================================================================
 # This script builds a nested boot environment to cleanly hand off hardware state.
 # 
-# ARCHITECTURE:
-# 1. Host Rootfs: Runs on Legacy kernel. Contains `custom_kexec` & module.
-# 2. Intermediate Rootfs: A tiny "automaton" rootfs that runs on the 4.14 kernel.
-#    It blindly loads the final kernel using the native `kexec` tool and jumps.
-# 3. Final Payload: The actual 6.12 ChromeOS Kernel and Rootfs.
+# ARCHITECTURE & KERNEL REQUIREMENTS:
+# 1. Host Kernel (Target Hardware): The locked-down kernel running on the Chromebook
+#    (e.g., ChromeOS 4.14/4.19/5.4 from the RMA Shim). It has CONFIG_KEXEC=n.
+#    Our out-of-tree module must be compiled against its headers.
+# 2. Intermediate Kernel: A tiny "automaton" kernel (e.g., Mainline 4.14).
+#    CRITICAL: Must have CONFIG_KEXEC=y. It blindly loads the final payload and jumps.
+# 3. Final Target Kernel: The destination kernel (e.g., Vanilla 6.x, modern ChromeOS, etc.).
 #
 # PREREQUISITES (Ensure these exist before running):
 # - Host BusyBox compiled at `busybox/_install`
 # - Static kexec-tools binary at `kexec-tools/build/sbin/kexec`
 # - Custom kexec module at `oot-kexec-module/kexec_mod.ko`
 # - Custom kexec usermode tool at `usermode/custom_kexec`
-# - Intermediate (Trampoline) Kernel 4.14 at `intermediate_kernel/arch/x86/boot/bzImage`
-# - Final Target Kernel 6.12 at `final_kernel/arch/x86/boot/bzImage`
-# - Final Target Rootfs (ChromeOS) at `final_rootfs.cpio.gz`
+# - Intermediate (Trampoline) Kernel at `intermediate_kernel/arch/x86/boot/bzImage`
+# - Final Target Kernel at `final_kernel/arch/x86/boot/bzImage`
+# - Final Target Rootfs base at `final_rootfs.cpio.gz`
 # ==============================================================================
 
 # Dynamically calculate the workspace root folder relative to this script's directory
@@ -39,12 +41,12 @@ MODULE_SRC="$WORKSPACE/oot-kexec-module/kexec_mod.ko"
 USERMODE_SRC="$WORKSPACE/usermode/custom_kexec"
 
 # Tools and payloads for the Intermediate Stage
-KEXEC_STATIC_BIN="$WORKSPACE/kexec-tools/build/sbin/kexec" # Update path if needed
+KEXEC_STATIC_BIN="$WORKSPACE/kexec-tools/build/sbin/kexec" 
 INTERMEDIATE_KERNEL="$WORKSPACE/intermediate_kernel/arch/x86/boot/bzImage"
 
 # The final destination
 FINAL_KERNEL="$WORKSPACE/final_kernel/arch/x86/boot/bzImage"
-FINAL_ROOTFS="$WORKSPACE/final_rootfs.cpio.gz" # Your actual operational ChromeOS rootfs
+FINAL_ROOTFS="$WORKSPACE/final_rootfs.cpio.gz" 
 
 # --- PRE-FLIGHT COMPILATION CHECKS ---
 MISSING_ASSETS=0
@@ -64,8 +66,8 @@ check_file "$HOST_INSTALL_DIR" "Host BusyBox _install dir"
 check_file "$MODULE_SRC" "Custom kexec module"
 check_file "$USERMODE_SRC" "Usermode loader binary"
 check_file "$KEXEC_STATIC_BIN" "Static kexec-tools binary"
-check_file "$INTERMEDIATE_KERNEL" "Intermediate 4.14 Kernel"
-check_file "$FINAL_KERNEL" "Final 6.12 Kernel"
+check_file "$INTERMEDIATE_KERNEL" "Intermediate Kernel"
+check_file "$FINAL_KERNEL" "Final Target Kernel"
 check_file "$FINAL_ROOTFS" "Final Target Rootfs archive"
 
 if [ $MISSING_ASSETS -eq 1 ]; then
@@ -102,7 +104,7 @@ fi
 cp "$KEXEC_STATIC_BIN" "$INTERMEDIATE_BUILD_DIR/sbin/kexec"
 
 # 3. Inject the Final Payloads into the Matryoshka Pocket
-echo "[*] Injecting Final 6.12 Payloads into /payload pocket..."
+echo "[*] Injecting Final Payloads into /payload pocket..."
 cp "$FINAL_KERNEL" "$INTERMEDIATE_BUILD_DIR/payload/bzImage"
 cp "$FINAL_ROOTFS" "$INTERMEDIATE_BUILD_DIR/payload/initramfs.cpio.gz"
 
@@ -126,11 +128,11 @@ echo "  [AUTOMATON] SUCCESS: WE ARE ALIVE IN STAGE 2!"
 echo "===================================================="
 echo ""
 
-echo "[AUTOMATON] Parsing and loading final 6.12 kernel..."
+echo "[AUTOMATON] Parsing and loading final target kernel..."
 
 # Load the final kernel natively using kexec-tools
 # - Restored console=tty0 to prevent sys_open("/dev/console") from hanging PID 1
-# - Added i8042 reset flags to prevent input controller freezes in QEMU.
+# - Added i8042 reset flags to prevent input controller freezes in QEMU/Hardware.
 /sbin/kexec -l /payload/bzImage \
     --initrd=/payload/initramfs.cpio.gz \
     --command-line="console=tty0 console=ttyS0,115200 root=/dev/ram0 rw debug earlyprintk=serial,ttyS0,115200 loglevel=8 initcall_debug cros_debug cros_secure=0 reset_devices irqpoll i8042.reset i8042.nomux noapic"
@@ -184,7 +186,7 @@ cp "$MODULE_SRC" "lib/kexec_mod.ko"
 cp "$USERMODE_SRC" "bin/custom_kexec"
 
 # 2. Stage the Intermediate Kernel and Ramdisk
-echo "[*] Staging Intermediate 4.14 kernel and ramdisk into /boot..."
+echo "[*] Staging Intermediate kernel and ramdisk into /boot..."
 cp "$INTERMEDIATE_KERNEL" "boot/target_bzImage"
 cp "$INTERMEDIATE_CPIO" "boot/target_initrd.cpio.gz"
 
