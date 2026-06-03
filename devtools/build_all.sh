@@ -58,9 +58,6 @@ echo "  [*] bzImage Header: $FILE_OUTPUT"
 FULL_VERSION=$(echo "$FILE_OUTPUT" | grep -o -E "version [^ ]+" | awk '{print $2}')
 HOST_VERSION=$(echo "$FULL_VERSION" | cut -d'.' -f1,2)
 
-# Extract git commit hash dynamically (e.g., a53de141176c)
-COMMIT_HASH=$(echo "$FULL_VERSION" | sed -n 's/.*-g\([0-9a-f]\{7,\}\).*/\1/p')
-
 # Check if Preemption is enabled in the version magic
 NEEDS_PREEMPT=0
 if echo "$FILE_OUTPUT" | grep -q -i "preempt"; then
@@ -73,80 +70,45 @@ if [ -z "$HOST_VERSION" ]; then
 fi
 
 echo "  [+] Discovered Target ChromeOS Kernel Version: $HOST_VERSION"
-if [ -n "$COMMIT_HASH" ]; then
-    echo "  [+] Discovered Exact Git Commit: $COMMIT_HASH"
-fi
+echo "  [+] Discovered Exact Full Version String: $FULL_VERSION"
 
 
-# --- PHASE 3: HOST KERNEL HEADERS PREP ---
-echo ">>> [Phase 3] Preparing Host Kernel Headers..."
+# --- PHASE 3: HOST KERNEL HEADERS PREP (WITH VERSION MAGIC SPOOFING) ---
+echo ">>> [Phase 3] Preparing Host Kernel Headers & Spoofing Version Magic..."
 HOST_KDIR="$WORKSPACE/host_kernel"
 mkdir -p "$HOST_KDIR"
 cd "$HOST_KDIR"
 
-DOWNLOAD_SUCCESS=0
-
-if [ -n "$COMMIT_HASH" ]; then
-    echo "  [*] Resolving short commit $COMMIT_HASH to full 40-character SHA-1 via Google Gitiles..."
-    # Gitiles format=TEXT returns base64 encoded text. We decode it and get the second word of the first line.
-    FULL_SHA=$(curl -s "https://chromium.googlesource.com/chromiumos/third_party/kernel/+/${COMMIT_HASH}?format=TEXT" | base64 -d 2>/dev/null | head -n 1 | awk '{print $2}')
-    
-    if [ -n "$FULL_SHA" ] && [ ${#FULL_SHA} -eq 40 ]; then
-        echo "  [+] Resolved to full SHA-1: $FULL_SHA"
-        COMMIT_TO_FETCH="$FULL_SHA"
-    else
-        echo "  [!] Failed to resolve full SHA-1. Using short commit hash: $COMMIT_HASH"
-        COMMIT_TO_FETCH="$COMMIT_HASH"
-    fi
-
-    # PRIMARY DOWNLOAD: Try downloading the source archive directly from Google Gitiles.
-    # This completely avoids all git checkout/fetch constraints on unreachable commits.
-    echo "  [*] Attempting direct source archive download from Google Gitiles..."
-    if curl -sL -f -o kernel_archive.tar.gz "https://chromium.googlesource.com/chromiumos/third_party/kernel/+archive/${COMMIT_TO_FETCH}.tar.gz"; then
-        echo "  [+] Archive downloaded successfully. Extracting source to $HOST_KDIR..."
-        tar -xzf kernel_archive.tar.gz
-        rm -f kernel_archive.tar.gz
-        DOWNLOAD_SUCCESS=1
-    else
-        echo "  [!] Direct archive download failed. Falling back to git database clone..."
-    fi
+if [ ! -d ".git" ]; then
+    git init
+    git remote add origin "$CHROMEOS_KERNEL_REPO"
 fi
 
-# FALLBACK METHOD: Standard git fetching if the Gitiles server archive generation is unavailable
-if [ $DOWNLOAD_SUCCESS -eq 0 ]; then
-    if [ ! -d ".git" ]; then
-        git init
-        git remote add origin "$CHROMEOS_KERNEL_REPO"
-    fi
+echo "  [*] Fetching standard generic kernel branch: chromeos-$HOST_VERSION..."
+git fetch --depth 1 origin "chromeos-$HOST_VERSION"
+git checkout FETCH_HEAD
 
-    if [ -n "$COMMIT_HASH" ]; then
-        echo "  [*] Fetching exact kernel commit to match Version Magic..."
-        # Attempt to fetch specific resolved commit directly.
-        if git fetch --depth 1 origin "$COMMIT_TO_FETCH" 2>/dev/null; then
-            echo "  [+] Direct shallow commit fetch succeeded."
-            git checkout FETCH_HEAD
-        else
-            echo "  [!] Direct commit fetch failed. Checking if we can locate containing branch via Gerrit API..."
-            # Query Gerrit to find the specific release/board branch that contains our target commit
-            BRANCH_SUGGESTION=$(curl -s "https://chromium-review.googlesource.com/projects/chromiumos%2Fthird_party%2Fkernel/branches?contains=${COMMIT_TO_FETCH}" | sed 's/)]}'\''//' | grep -o -E '"ref": "refs/heads/[^"]+"' | head -n 1 | cut -d'"' -f4 | sed 's|refs/heads/||')
-            
-            if [ -n "$BRANCH_SUGGESTION" ]; then
-                echo "  [+] Found containing branch via Gerrit API: $BRANCH_SUGGESTION"
-                git fetch --depth 1 origin "$BRANCH_SUGGESTION"
-                git checkout "$COMMIT_TO_FETCH"
-            else
-                echo "  [!] No specific containing branch found. Falling back to fetching full history of branch: chromeos-$HOST_VERSION..."
-                # Fallback to fetching the entire main branch history so git can locate the commit locally
-                git fetch origin "chromeos-$HOST_VERSION"
-                git checkout "$COMMIT_TO_FETCH"
-            fi
-        fi
-    else
-        echo "  [*] Fetching kernel branch: chromeos-$HOST_VERSION..."
-        git fetch --depth 1 origin "chromeos-$HOST_VERSION"
-        git checkout FETCH_HEAD
-    fi
+# ==================================================================
+# THE SPOOFING HACK
+# We dynamically rewrite the top-level Kernel Makefile to force the
+# build system to generate headers matching our exact, hidden commit!
+# ==================================================================
+echo "  [*] Spoofing Kernel Makefile to perfectly match Version Magic: $FULL_VERSION"
+K_MAJ=$(echo "$FULL_VERSION" | cut -d. -f1)
+K_MIN=$(echo "$FULL_VERSION" | cut -d. -f2)
+K_SUB=$(echo "$FULL_VERSION" | cut -d. -f3 | cut -d- -f1)
+
+# Safely extract everything after the first hyphen for EXTRAVERSION
+if echo "$FULL_VERSION" | grep -q "-"; then
+    K_EXT="-$(echo "$FULL_VERSION" | cut -d- -f2-)"
+else
+    K_EXT=""
 fi
+
+sed -i "s/^VERSION = .*/VERSION = $K_MAJ/" Makefile
+sed -i "s/^PATCHLEVEL = .*/PATCHLEVEL = $K_MIN/" Makefile
+sed -i "s/^SUBLEVEL = .*/SUBLEVEL = $K_SUB/" Makefile
+sed -i "s/^EXTRAVERSION = .*/EXTRAVERSION = $K_EXT/" Makefile
 
 echo "  [*] Attempting to extract original .config from vmlinuz.bin..."
 if ./scripts/extract-ikconfig "$WORKSPACE/vmlinuz.bin" > .config 2>/dev/null; then
