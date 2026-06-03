@@ -40,5 +40,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: patched-shimboot-image
-          path: shimboot.bin
+          # use shimboot grunt image for now
+          path: shimboot_grunt.bin
           if-no-files-found: error
