@@ -32,6 +32,8 @@ jobs:
           chmod +x devtools/final_build_step.sh
           chmod +x devtools/build_initramfs.sh
           chmod +x devtools/inject_to_shim.sh
+          chmod +x devtools/extract_from_shim.sh 
+          chmod +x devtools/detect_version_magic.sh 
           
           # Run the master orchestrator (sudo is required for the final injection step inside the script)
           sudo ./devtools/build_all.sh
