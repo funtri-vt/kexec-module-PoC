@@ -136,10 +136,6 @@ fi
 echo "  [*] Disabling CONFIG_KEXEC to ensure module compatibility..."
 ./scripts/config --disable CONFIG_KEXEC
 
-# Double guarantee the version magic suffix via .config
-echo "  [*] Forcing CONFIG_LOCALVERSION to match suffix..."
-./scripts/config --set-str LOCALVERSION "$K_EXT"
-
 make olddefconfig
 
 echo "  [*] Generating module headers..."
