@@ -78,7 +78,7 @@ echo ""
 # --- STEP 0: DYNAMICALLY EXPAND THE RAW IMAGE & PARTITION ---
 echo "[*] Step 0: Expanding raw shimboot image to ensure adequate space..."
 
-# 1. Expand the raw .bin image by 300MB to comfortably hold our multi-stage payloads
+# 1. Expand the raw .bin image by 1GB to comfortably hold our multi-stage payloads
 truncate -s +1G "$SHIM_IMG"
 
 # 2. Relocate the GPT backup header to the new end of the file
@@ -86,18 +86,25 @@ if command -v sgdisk >/dev/null 2>&1; then
     sgdisk -e "$SHIM_IMG" >/dev/null 2>&1 || true
 fi
 
-# 3. Use parted to resize partition 5 to 100% of the newly allocated space
-if command -v parted >/dev/null 2>&1; then
-    parted -s "$SHIM_IMG" resizepart 5 100% || true
+# 3. Use sfdisk to expand partition 5 to 100% of the newly allocated space.
+# "echo ', +'" tells sfdisk to leave the partition start alone and expand the size to max.
+echo "  [*] Expanding Partition 5 using sfdisk..."
+if command -v sfdisk >/dev/null 2>&1; then
+    echo ", +" | sfdisk -N 5 --force "$SHIM_IMG" >/dev/null 2>&1 || true
 else
-    echo "  [!] Warning: 'parted' tool not found. Skipping partition table resize."
+    echo "  [!] Error: 'sfdisk' tool not found. Cannot resize target partition."
+    exit 1
+fi
+
+# Inform kernel of partition changes
+if command -v udevadm >/dev/null 2>&1; then
+    udevadm settle || true
 fi
 
 # --- STEP 1: DETECT AND MOUNT GPT PARTITIONS VIA KPARTX ---
 echo "[*] Step 1: Mapping GPT partitions from the raw image..."
 
 # kpartx reads partition tables on a device and creates device maps over it
-# -a: Add partition mappings, -v: Verbose output
 MAP_OUTPUT=$(kpartx -av "$SHIM_IMG")
 echo "$MAP_OUTPUT"
 
@@ -115,7 +122,7 @@ fi
 # Dynamically target Partition 5 (standard shimboot ext4 partition)
 TARGET_PART="/dev/mapper/${LOOP_DEV}p5"
 
-# Let's perform a safety check using parted/blkid to confirm this is an ext4 partition
+# Let's perform a safety check using blkid to confirm this is an ext4 partition
 echo "[*] Verifying partition properties of $TARGET_PART..."
 if ! blkid "$TARGET_PART" | grep -q "ext4"; then
     echo "  [!] Warning: Partition 5 is not ext4. Searching GPT names for 'shimboot_rootfs'..."
@@ -123,7 +130,6 @@ if ! blkid "$TARGET_PART" | grep -q "ext4"; then
     # Fallback search through all mapped loop partitions to find one labeled with shimboot_rootfs
     FOUND_PART=""
     for part in /dev/mapper/${LOOP_DEV}p*; do
-        # Use blkid or file to check if it's ext4
         if blkid "$part" | grep -q "ext4"; then
             FOUND_PART="$part"
             break
@@ -157,7 +163,6 @@ echo "[*] Step 3: Unpacking initramfs filesystem directly into rootfs..."
 cd "$MOUNT_DIR"
 
 # Safely clean out old files to prevent stale binaries/configs from lingering.
-# Guard prevents accidental rm -rf execution on the host root directory.
 echo "  [*] Purging old rootfs structures from previous runs..."
 if [ "$PWD" = "$MOUNT_DIR" ] && [ "$MOUNT_DIR" != "/" ] && [ -n "$MOUNT_DIR" ]; then
     # Delete everything except the system lost+found folder to keep ext4 happy
@@ -169,7 +174,6 @@ else
 fi
 
 # We extract the entire host initramfs archive.
-# Added the -u (--unconditional) flag to force overwriting of any remaining filesystem structures.
 zcat "$INITRAMFS_SRC" | cpio -idmuv --no-absolute-filenames
 
 echo "  [+] Extraction complete."
