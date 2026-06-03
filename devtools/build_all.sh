@@ -105,10 +105,10 @@ git checkout FETCH_HEAD
 # THE SPOOFING HACK & PREEMPTION / SCM OVERRIDES
 # ==================================================================
 echo "  [*] Spoofing Kernel Makefile to perfectly match Version Magic: $FULL_VERSION"
-sed -i "s/^VERSION = .*/VERSION = $K_MAJ/" Makefile
-sed -i "s/^PATCHLEVEL = .*/PATCHLEVEL = $K_MIN/" Makefile
-sed -i "s/^SUBLEVEL = .*/SUBLEVEL = $K_SUB/" Makefile
-sed -i "s/^EXTRAVERSION = .*/EXTRAVERSION = $K_EXT/" Makefile
+sed -i "s/^VERSION.*/VERSION = $K_MAJ/" Makefile
+sed -i "s/^PATCHLEVEL.*/PATCHLEVEL = $K_MIN/" Makefile
+sed -i "s/^SUBLEVEL.*/SUBLEVEL = $K_SUB/" Makefile
+sed -i "s/^EXTRAVERSION.*/EXTRAVERSION = $K_EXT/" Makefile
 
 # CRITICAL VERSION MATCHING FIX:
 # Force touch of .scmversion to prevent scripts/setlocalversion from appending a trailing '+' sign!
@@ -135,6 +135,11 @@ fi
 # Force CONFIG_KEXEC off to mirror the locked-down environment
 echo "  [*] Disabling CONFIG_KEXEC to ensure module compatibility..."
 ./scripts/config --disable CONFIG_KEXEC
+
+# Double guarantee the version magic suffix via .config
+echo "  [*] Forcing CONFIG_LOCALVERSION to match suffix..."
+./scripts/config --set-str LOCALVERSION "$K_EXT"
+
 make olddefconfig
 
 echo "  [*] Generating module headers..."
