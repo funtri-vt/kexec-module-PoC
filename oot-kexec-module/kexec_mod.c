@@ -24,7 +24,7 @@ MODULE_VERSION("6.7");
 
 /* Structure to track a file payload via scattered 4KB pages */
 struct scatter_buffer {
-    struct page **pages;      /* Array of page pointers */
+    unsigned long *virt_addrs;/* Array of virtual addresses (__get_free_page) */
     unsigned long *phys_addrs;/* Array of raw physical addresses */
     size_t nr_pages;          /* Total number of pages allocated */
     size_t size;              /* Total size of payload in bytes */
@@ -52,16 +52,16 @@ static struct screen_info *ptr_screen_info = NULL;
 static void free_scatter_buffer(struct scatter_buffer *buf)
 {
     size_t i;
-    if (buf->pages) {
+    if (buf->virt_addrs) {
         for (i = 0; i < buf->nr_pages; i++) {
-            if (buf->pages[i]) {
-                __free_page(buf->pages[i]);
+            if (buf->virt_addrs[i]) {
+                free_page(buf->virt_addrs[i]);
             }
         }
-        kfree(buf->pages);
+        kfree(buf->virt_addrs);
         kfree(buf->phys_addrs);
     }
-    buf->pages = NULL;
+    buf->virt_addrs = NULL;
     buf->phys_addrs = NULL;
     buf->nr_pages = 0;
     buf->size = 0;
@@ -77,10 +77,10 @@ static int load_user_to_scatter_buffer(struct scatter_buffer *buf, const void __
 
     free_scatter_buffer(buf);
 
-    buf->pages = kmalloc_array(nr_pages, sizeof(struct page *), GFP_KERNEL | __GFP_ZERO);
+    buf->virt_addrs = kmalloc_array(nr_pages, sizeof(unsigned long), GFP_KERNEL | __GFP_ZERO);
     buf->phys_addrs = kmalloc_array(nr_pages, sizeof(unsigned long), GFP_KERNEL | __GFP_ZERO);
-    if (!buf->pages || !buf->phys_addrs) {
-        kfree(buf->pages);
+    if (!buf->virt_addrs || !buf->phys_addrs) {
+        kfree(buf->virt_addrs);
         kfree(buf->phys_addrs);
         return -ENOMEM;
     }
@@ -88,23 +88,23 @@ static int load_user_to_scatter_buffer(struct scatter_buffer *buf, const void __
     buf->size = size;
 
     for (i = 0; i < nr_pages; i++) {
-        void *kaddr;
         size_t copy_size = (bytes_left > PAGE_SIZE_4K) ? PAGE_SIZE_4K : bytes_left;
 
-        buf->pages[i] = alloc_page(GFP_KERNEL | __GFP_ZERO);
-        if (!buf->pages[i]) {
+        /* Bypass alloc_page/kmap and directly allocate a usable virtual address */
+        buf->virt_addrs[i] = __get_free_page(GFP_KERNEL | __GFP_ZERO);
+        if (!buf->virt_addrs[i]) {
             free_scatter_buffer(buf);
             return -ENOMEM;
         }
-        buf->phys_addrs[i] = page_to_phys(buf->pages[i]);
+        
+        /* Store physical address for the final jump */
+        buf->phys_addrs[i] = virt_to_phys((void *)buf->virt_addrs[i]);
 
-        kaddr = kmap(buf->pages[i]);
-        if (copy_from_user(kaddr, curr_user_ptr, copy_size)) {
-            kunmap(buf->pages[i]);
+        /* Copy straight to the virtual address without kmap */
+        if (copy_from_user((void *)buf->virt_addrs[i], curr_user_ptr, copy_size)) {
             free_scatter_buffer(buf);
             return -EFAULT;
         }
-        kunmap(buf->pages[i]);
 
         curr_user_ptr += copy_size;
         bytes_left -= copy_size;
@@ -118,13 +118,12 @@ static int setup_zero_page(void)
     unsigned char *kernel_setup = NULL;
     unsigned char setup_sects;
 
-    if (!loaded_kernel.pages || loaded_kernel.nr_pages == 0) return -EINVAL;
+    if (!loaded_kernel.virt_addrs || loaded_kernel.nr_pages == 0) return -EINVAL;
 
     memset(zp, 0, PAGE_SIZE_4K);
 
-    kernel_setup = kmap(loaded_kernel.pages[0]);
+    kernel_setup = (unsigned char *)loaded_kernel.virt_addrs[0];
     memcpy(zp, kernel_setup, 1024);
-    kunmap(loaded_kernel.pages[0]);
 
     /* Inject the active screen_info to prevent display corruption */
     if (ptr_screen_info) {
@@ -472,7 +471,7 @@ static long kexec_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
         case KEXEC_IOC_EXECUTE:
             printk(KERN_INFO "kexec: EXECUTE command received.\n");
-            if (!loaded_kernel.pages) return -EINVAL;
+            if (!loaded_kernel.virt_addrs) return -EINVAL;
 
             ret = setup_zero_page();
             if (ret) return ret;
