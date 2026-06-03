@@ -476,10 +476,10 @@ static long kexec_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
             ret = setup_zero_page();
             if (ret) return ret;
 
-            ptr_migrate_to_reboot_cpu();
-            ptr_device_shutdown();
+            if (ptr_migrate_to_reboot_cpu) ptr_migrate_to_reboot_cpu();
+            if (ptr_device_shutdown) ptr_device_shutdown();
             if (ptr_smp_send_stop) ptr_smp_send_stop();
-            ptr_syscore_shutdown();
+            if (ptr_syscore_shutdown) ptr_syscore_shutdown();
 
             execute_trampoline();
             break;
@@ -504,6 +504,8 @@ static struct miscdevice kexec_misc_device = {
 static int __init custom_kexec_init(void)
 {
     int ret;
+    
+    printk(KERN_INFO "kexec: Initializing custom kexec module...\n");
 
     ptr_device_shutdown = (void *)kallsyms_lookup_name("device_shutdown");
     ptr_syscore_shutdown = (void *)kallsyms_lookup_name("syscore_shutdown");
@@ -512,25 +514,30 @@ static int __init custom_kexec_init(void)
     ptr_lapic_shutdown = (void *)kallsyms_lookup_name("lapic_shutdown");
     ptr_screen_info = (struct screen_info *)kallsyms_lookup_name("screen_info");
 
-    if (!ptr_device_shutdown || !ptr_syscore_shutdown || !ptr_migrate_to_reboot_cpu) {
-        printk(KERN_ERR "kexec: Failed to resolve essential teardown symbols.\n");
-        return -ENXIO;
-    }
+    if (!ptr_device_shutdown) printk(KERN_WARNING "kexec: device_shutdown symbol missing!\n");
+    if (!ptr_syscore_shutdown) printk(KERN_WARNING "kexec: syscore_shutdown symbol missing!\n");
+    if (!ptr_migrate_to_reboot_cpu) printk(KERN_WARNING "kexec: migrate_to_reboot_cpu symbol missing!\n");
+    if (!ptr_smp_send_stop) printk(KERN_WARNING "kexec: smp_send_stop symbol missing!\n");
 
     if (!ptr_screen_info) {
         printk(KERN_WARNING "kexec: screen_info not found. Display might be corrupted after pivot.\n");
     }
 
     zero_page_virt = (void *)__get_free_page(GFP_KERNEL | __GFP_ZERO);
-    if (!zero_page_virt) return -ENOMEM;
+    if (!zero_page_virt) {
+        printk(KERN_ERR "kexec: Failed to allocate zero page.\n");
+        return -ENOMEM;
+    }
     zero_page_phys = virt_to_phys(zero_page_virt);
 
     ret = misc_register(&kexec_misc_device);
     if (ret) {
+        printk(KERN_ERR "kexec: misc_register failed (%d)\n", ret);
         free_page((unsigned long)zero_page_virt);
         return ret;
     }
-    printk(KERN_INFO "kexec: Module loaded successfully.\n");
+    
+    printk(KERN_INFO "kexec: Module loaded successfully. Device node created.\n");
     return 0;
 }
 
