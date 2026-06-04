@@ -511,12 +511,11 @@ static struct miscdevice kexec_misc_device = {
     .fops = &kexec_fops,
 };
 
-/* * DIRECT ENTRY POINTS:
- * We directly define the raw, global init_module and cleanup_module entry points
- * without static declarations or helper macros. This completely bypasses
- * any compiler/linker optimization structures trying to discard alias definitions.
+/* * ISO C90 Compliant Module Helper Wrapper.
+ * Re-routes the core init and cleanup points through helper routines to prevent 
+ * Stage-2 modpost from stripping the module's entry points in the linked .mod.c
  */
-int init_module(void)
+static int __init custom_module_wrapper_init(void)
 {
     int ret;
     
@@ -556,7 +555,7 @@ int init_module(void)
     return 0;
 }
 
-void cleanup_module(void)
+static void __exit custom_module_wrapper_exit(void)
 {
     if (kernel_cmdline) kfree(kernel_cmdline);
     free_scatter_buffer(&loaded_kernel);
@@ -567,3 +566,10 @@ void cleanup_module(void)
     misc_deregister(&kexec_misc_device);
     printk(KERN_EMERG "kexec: Module unloaded.\n");
 }
+
+/* * Register with standard macro hooks.
+ * This instructs modpost to link the custom_module_wrapper symbols directly into 
+ * the module metadata block, fully satisfying Kbuild link tables.
+ */
+module_init(custom_module_wrapper_init);
+module_exit(custom_module_wrapper_exit);
