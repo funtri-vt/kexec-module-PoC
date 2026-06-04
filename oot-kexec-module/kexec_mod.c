@@ -16,7 +16,7 @@
 #include "../kexec_ioctl.h"
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Developer");
+MODULE_AUTHOR("funtri-vt");
 MODULE_DESCRIPTION("Custom Out-of-Tree Kexec with Parameter Callback Hijack");
 MODULE_VERSION("6.7");
 
