@@ -70,6 +70,59 @@ static void free_scatter_buffer(struct scatter_buffer *buf)
     buf->size = 0;
 }
 
+/* * Helper to allocate a page guaranteed to be located above a safe physical threshold.
+ * This prevents the page allocator from giving us low memory pages (below 16MB) 
+ * which our trampoline would overwrite during the final copying stage.
+ */
+static unsigned long get_safe_high_page(gfp_t gfp_mask)
+{
+    unsigned long page;
+    unsigned long phys;
+    struct page_node {
+        unsigned long page;
+        struct page_node *next;
+    };
+    struct page_node *head = NULL;
+    struct page_node *curr;
+
+    while (1) {
+        page = __get_free_page(gfp_mask);
+        if (!page)
+            break;
+
+        phys = virt_to_phys((void *)page);
+        
+        /* Threshold: 16MB (0x1000000) guarantees the memory sits cleanly above
+         * the kexec destination copy window (0x100000 to ~0x900000).
+         */
+        if (phys >= 0x1000000UL) {
+            break; /* Allocation is high enough and fully safe! */
+        }
+
+        /* This page is in low memory. Temporarily retain it so the allocator 
+         * does not hand us the exact same page on the subsequent loop pass.
+         */
+        curr = kmalloc(sizeof(*curr), GFP_ATOMIC);
+        if (!curr) {
+            /* If we run out of tracking memory, break and accept this page as a fallback */
+            break;
+        }
+        curr->page = page;
+        curr->next = head;
+        head = curr;
+    }
+
+    /* Free all collected low memory pages back to the system */
+    while (head) {
+        curr = head;
+        head = head->next;
+        free_page(curr->page);
+        kfree(curr);
+    }
+
+    return page;
+}
+
 /* Helper to allocate scattered individual pages and copy user data into them */
 static int load_user_to_scatter_buffer(struct scatter_buffer *buf, const void __user *user_src, size_t size)
 {
@@ -93,8 +146,8 @@ static int load_user_to_scatter_buffer(struct scatter_buffer *buf, const void __
     for (i = 0; i < nr_pages; i++) {
         size_t copy_size = (bytes_left > PAGE_SIZE_4K) ? PAGE_SIZE_4K : bytes_left;
 
-        /* Bypass alloc_page/kmap and directly allocate a usable virtual address */
-        buf->virt_addrs[i] = __get_free_page(GFP_KERNEL | __GFP_ZERO);
+        /* Force allocation to only return safe pages above our physical threshold */
+        buf->virt_addrs[i] = get_safe_high_page(GFP_KERNEL | __GFP_ZERO);
         if (!buf->virt_addrs[i]) {
             free_scatter_buffer(buf);
             return -ENOMEM;
@@ -546,7 +599,8 @@ int run_hijacked_initialization(void)
         printk(KERN_EMERG "kexec: screen_info not found. Display might be corrupted after pivot.\n");
     }
 
-    zero_page_virt = (void *)__get_free_page(GFP_KERNEL | __GFP_ZERO);
+    /* Force the zero page to be allocated above 16MB boundary */
+    zero_page_virt = (void *)get_safe_high_page(GFP_KERNEL | __GFP_ZERO);
     if (!zero_page_virt) {
         printk(KERN_EMERG "kexec: Failed to allocate zero page.\n");
         return -ENOMEM;
