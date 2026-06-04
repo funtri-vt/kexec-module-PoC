@@ -511,11 +511,13 @@ static struct miscdevice kexec_misc_device = {
     .fops = &kexec_fops,
 };
 
-/* * ISO C90 Compliant Module Helper Wrapper.
- * Using kernel native compiler macros (__used, noinline) instead of raw GCC 
- * attributes to cleanly bypass macro definition expansions during Kbuild compilation.
+/* * Global Entry Points.
+ * By NOT using the 'static' keyword, we force the LTO compiler to treat these
+ * as globally exported symbols, preventing dead-code elimination.
+ * By USING the '__init' keyword, we ensure the code is placed in the highly
+ * secured .init.text memory section, satisfying ChromeOS W^X loader requirements.
  */
-int __used noinline custom_module_wrapper_init(void)
+int __init custom_kexec_init(void)
 {
     int ret;
     
@@ -555,7 +557,7 @@ int __used noinline custom_module_wrapper_init(void)
     return 0;
 }
 
-void __used noinline custom_module_wrapper_exit(void)
+void __exit custom_kexec_exit(void)
 {
     if (kernel_cmdline) kfree(kernel_cmdline);
     free_scatter_buffer(&loaded_kernel);
@@ -568,8 +570,8 @@ void __used noinline custom_module_wrapper_exit(void)
 }
 
 /* * Register with standard macro hooks.
- * This instructs modpost to link the custom_module_wrapper symbols directly into 
+ * This instructs modpost to link the symbols directly into 
  * the module metadata block, fully satisfying Kbuild link tables.
  */
-module_init(custom_module_wrapper_init);
-module_exit(custom_module_wrapper_exit);
+module_init(custom_kexec_init);
+module_exit(custom_kexec_exit);
