@@ -22,7 +22,7 @@ jobs:
       - name: Download Base Shimboot Image
         run: |
           #Download just shimboot grunt for now
-          wget -O shimboot_grunt.zip https://github.com/ading2210/shimboot/releases/latest/download/shimboot_octopus.zip
+          wget -O shimboot_octopus.zip https://github.com/ading2210/shimboot/releases/latest/download/shimboot_octopus.zip
           unzip ./shimboot_octopus.zip
 
       - name: Get Current Date for Cache Key
