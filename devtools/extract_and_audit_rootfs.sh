@@ -1,11 +1,11 @@
 #!/bin/bash
 # Recursive Rootfs Extraction and Binary Integrity Auditor Script
 #
-# This script extracts:
-# 1. The Host Kernel (from partition 2)
-# 2. The Host Initramfs (partition 4 structure)
-# 3. Standalone custom injected payloads
-# 4. The target kernel, module, and intermediate / final rootfs layers
+# This script extracts all three nested "Matryoshka" layers:
+# 1. The Host Kernel (from Partition 2)
+# 2. The Host Initramfs (from Partition 4)
+# 3. The Intermediate Automaton Initrd (from host's /boot/target_initrd.cpio.gz)
+# 4. The Final Target Initrd (from intermediate's /payload/initramfs.cpio.gz)
 #
 # It then audits all compiled binaries inside the extracted layers to verify
 # static compilation vs. dynamic linker/library path configurations to prevent
@@ -83,7 +83,8 @@ echo ""
 rm -rf "$EXTRACT_DIR"
 mkdir -p "$EXTRACT_DIR"
 mkdir -p "$EXTRACT_DIR/host_initramfs_root"
-mkdir -p "$EXTRACT_DIR/target_initrd_root"
+mkdir -p "$EXTRACT_DIR/intermediate_initrd_root"
+mkdir -p "$EXTRACT_DIR/final_target_initrd_root"
 
 # Start Audit Log
 echo "==========================================================" > "$AUDIT_LOG"
@@ -143,29 +144,40 @@ mount -o ro "$TARGET_PART" "$MOUNT_DIR"
 echo "  [+] Mounted successfully at $MOUNT_DIR"
 
 # --- STEP 4: EXTRACT INTERMEDIATE (HOST) INITRAMFS ---
-echo "[*] Step 4: Extracting and unpacking Intermediate (Host) Initramfs..."
+echo "[*] Step 4: Extracting and unpacking Base Host Initramfs..."
 cd "$MOUNT_DIR"
-# Unpack host partition structure directly to filesystem directories for analysis
 cp -a . "$EXTRACT_DIR/host_initramfs_root/"
-echo "  [+] Intermediate rootfs extracted cleanly to: $EXTRACT_DIR/host_initramfs_root"
+echo "  [+] Base Host rootfs extracted cleanly to: $EXTRACT_DIR/host_initramfs_root"
 
-# --- STEP 5: DECOMPRESS TARGET INITRD PAYLOAD ---
-echo "[*] Step 5: Finding and unpacking nested Target Initrd..."
-TARGET_INITRD_PATH="$EXTRACT_DIR/host_initramfs_root/boot/target_initrd.cpio.gz"
+# --- STEP 5: DECOMPRESS INTERMEDIATE AUTOMATON INITRD PAYLOAD ---
+echo "[*] Step 5: Finding and unpacking nested Intermediate Automaton Initrd..."
+INTERMEDIATE_INITRD_PATH="$EXTRACT_DIR/host_initramfs_root/boot/target_initrd.cpio.gz"
 
-if [ -f "$TARGET_INITRD_PATH" ]; then
-    echo "  [*] Decompressing target_initrd.cpio.gz..."
-    cd "$EXTRACT_DIR/target_initrd_root"
-    zcat "$TARGET_INITRD_PATH" | cpio -idmv --no-absolute-filenames > /dev/null 2>&1 || true
-    echo "  [+] Target initrd extracted cleanly to: $EXTRACT_DIR/target_initrd_root"
+if [ -f "$INTERMEDIATE_INITRD_PATH" ]; then
+    echo "  [*] Decompressing target_initrd.cpio.gz (Intermediate)..."
+    cd "$EXTRACT_DIR/intermediate_initrd_root"
+    zcat "$INTERMEDIATE_INITRD_PATH" | cpio -idmv --no-absolute-filenames > /dev/null 2>&1 || true
+    echo "  [+] Intermediate initrd extracted cleanly to: $EXTRACT_DIR/intermediate_initrd_root"
 else
     echo "  [!] Warning: target_initrd.cpio.gz not found inside Partition 4 payload tree."
+fi
+
+# --- STEP 5b: DECOMPRESS ACTUAL FINAL TARGET INITRD ---
+echo "[*] Step 5b: Finding and unpacking actual Final Target Initrd..."
+FINAL_INITRD_PATH="$EXTRACT_DIR/intermediate_initrd_root/payload/initramfs.cpio.gz"
+
+if [ -f "$FINAL_INITRD_PATH" ]; then
+    echo "  [*] Decompressing initramfs.cpio.gz (Final Target)..."
+    cd "$EXTRACT_DIR/final_target_initrd_root"
+    zcat "$FINAL_INITRD_PATH" | cpio -idmv --no-absolute-filenames > /dev/null 2>&1 || true
+    echo "  [+] Final target initrd extracted cleanly to: $EXTRACT_DIR/final_target_initrd_root"
+else
+    echo "  [!] Warning: initramfs.cpio.gz not found inside intermediate rootfs payload directory."
 fi
 
 # --- STEP 6: EXECUTE STATIC LINKAGE AND SYSTEM INTEGRITY FORENSICS ---
 echo "[*] Step 6: Performing deep security audit of extracted targets..."
 echo "" >> "$AUDIT_LOG"
-echo "=== TARGET INITRD AUDIT ===" >> "$AUDIT_LOG"
 
 audit_binary() {
     local bin_path="$1"
@@ -224,28 +236,35 @@ audit_binary() {
     fi
 }
 
-# Audit Host (Intermediate) Initramfs Layer
-echo "=== INTERMEDIATE HOST INITRAMFS FORENSICS ===" >> "$AUDIT_LOG"
+# Audit Host Base Initramfs Layer
+echo "=== BASE HOST INITRAMFS FORENSICS ===" >> "$AUDIT_LOG"
 audit_binary "$EXTRACT_DIR/host_initramfs_root/init" "Base Init Process"
 audit_binary "$EXTRACT_DIR/host_initramfs_root/bin/busybox" "Busybox Executable"
 audit_binary "$EXTRACT_DIR/host_initramfs_root/bin/sh" "System Shell Interpreter"
 audit_binary "$EXTRACT_DIR/host_initramfs_root/bin/finit_loader" "Dynamic Module Loader"
 
-# Audit Target (Final) Initramfs Layer
+# Audit Intermediate Automaton Layer
 echo "" >> "$AUDIT_LOG"
-echo "=== FINAL TARGET INITRD FORENSICS ===" >> "$AUDIT_LOG"
-audit_binary "$EXTRACT_DIR/target_initrd_root/init" "Final Target Init Process"
-audit_binary "$EXTRACT_DIR/target_initrd_root/bin/busybox" "Final Busybox Executable"
-audit_binary "$EXTRACT_DIR/target_initrd_root/bin/sh" "Final System Shell Interpreter"
+echo "=== INTERMEDIATE AUTOMATON INITRD FORENSICS ===" >> "$AUDIT_LOG"
+audit_binary "$EXTRACT_DIR/intermediate_initrd_root/init" "Automaton Init Process"
+audit_binary "$EXTRACT_DIR/intermediate_initrd_root/sbin/kexec" "Intermediate Native Kexec"
+audit_binary "$EXTRACT_DIR/intermediate_initrd_root/bin/sh" "Intermediate Shell Interpreter"
+
+# Audit Real Final Target Layer
+echo "" >> "$AUDIT_LOG"
+echo "=== ACTUAL FINAL TARGET INITRD FORENSICS ===" >> "$AUDIT_LOG"
+audit_binary "$EXTRACT_DIR/final_target_initrd_root/init" "Final Target Init Process"
+audit_binary "$EXTRACT_DIR/final_target_initrd_root/bin/busybox" "Final Busybox Executable"
+audit_binary "$EXTRACT_DIR/final_target_initrd_root/bin/sh" "Final System Shell Interpreter"
 
 # Return to workspace context
 cd "$WORKSPACE"
 
 echo "=========================================================="
-echo " [SUCCESS] EXTRACTION AND Deep Audit Completed!"
+echo " [SUCCESS] EXTRACTION AND THREE-STAGE FORENSICS COMPLETED!"
 echo "--------------------------------------------------------"
-echo "  All intermediate and target systems have been extracted."
-echo "  Review the audit report file for dynamic linking and shell errors:"
+echo "  All host, intermediate, and final layers have been unrolled."
+echo "  Review the nested audit report file for the REAL rootfs failures:"
 echo "  -> $AUDIT_LOG"
 echo ""
 cat "$AUDIT_LOG"
