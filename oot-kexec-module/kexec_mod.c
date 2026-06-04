@@ -512,10 +512,11 @@ static struct miscdevice kexec_misc_device = {
 };
 
 /* * ISO C90 Compliant Module Helper Wrapper.
- * Made non-static to ensure globally visible linkage names that can be safely
- * aliased by modpost under any preprocessor optimization rules or custom LTO layers.
+ * Made non-static and explicitly marked as used/noinline to prevent aggressive
+ * Link-Time Optimization (LTO) or Dead-Code Elimination (DCE) from stripping
+ * the function body during Stage-1 compilation.
  */
-int custom_module_wrapper_init(void)
+int __attribute__((used)) __attribute__((noinline)) custom_module_wrapper_init(void)
 {
     int ret;
     
@@ -555,7 +556,7 @@ int custom_module_wrapper_init(void)
     return 0;
 }
 
-void custom_module_wrapper_exit(void)
+void __attribute__((used)) __attribute__((noinline)) custom_module_wrapper_exit(void)
 {
     if (kernel_cmdline) kfree(kernel_cmdline);
     free_scatter_buffer(&loaded_kernel);
