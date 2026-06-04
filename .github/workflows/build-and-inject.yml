@@ -25,6 +25,21 @@ jobs:
           wget -O shimboot_grunt.zip https://github.com/ading2210/shimboot/releases/latest/download/shimboot_grunt.zip
           unzip ./shimboot_grunt.zip
 
+      - name: Get Current Date for Cache Key
+        id: cache-date
+        run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+
+      - name: Cache Heavy Compilation Assets
+        id: toolchain-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            intermediate_kernel/
+            final_kernel/
+            busybox/
+            kexec-tools/
+          key: toolchain-cache-${{ runner.os }}-${{ steps.cache-date.outputs.date }}
+
       - name: Execute Master Build Orchestrator
         run: |
           chmod +x devtools/build_all.sh
@@ -35,8 +50,8 @@ jobs:
           chmod +x devtools/extract_from_shim.sh 
           chmod +x devtools/detect_version_magic.sh 
           
-          # Run the master orchestrator (sudo is required for the final injection step inside the script)
-          sudo ./devtools/build_all.sh
+          # Run the master orchestrator, passing the cache-hit variable so it knows to skip building
+          sudo CACHE_HIT="${{ steps.toolchain-cache.outputs.cache-hit }}" ./devtools/build_all.sh
 
       - name: Upload Patched Shimboot Artifact
         uses: actions/upload-artifact@v4

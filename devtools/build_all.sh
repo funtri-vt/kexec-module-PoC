@@ -13,6 +13,10 @@ echo "  MASTER ORCHESTRATOR: KEXEC 3-STAGE PIPELINE BUILDER"
 echo "=========================================================="
 echo "[*] Workspace: $WORKSPACE"
 echo "[*] Compiling with $CORES threads..."
+
+if [ "$CACHE_HIT" = "true" ]; then
+    echo "[+] CACHE RESTORED: Heavy compilation steps will be bypassed if binaries exist!"
+fi
 echo ""
 
 # ==============================================================================
@@ -148,54 +152,74 @@ rm -f "$WORKSPACE/vmlinuz.bin"
 # --- PHASE 4: INTERMEDIATE KERNEL BUILD (The Automaton) ---
 echo ">>> [Phase 4] Building Intermediate Kernel ($INTERMEDIATE_KERNEL_BRANCH)..."
 INT_KDIR="$WORKSPACE/intermediate_kernel"
-if [ ! -d "$INT_KDIR" ]; then
-    git clone --depth 1 -b "$INTERMEDIATE_KERNEL_BRANCH" "$MAINLINE_KERNEL_REPO" "$INT_KDIR"
+
+if [ "$CACHE_HIT" = "true" ] && [ -f "$INT_KDIR/arch/x86/boot/bzImage" ]; then
+    echo "  [+] Cached intermediate kernel found! Skipping compilation."
+else
+    if [ ! -d "$INT_KDIR" ]; then
+        git clone --depth 1 -b "$INTERMEDIATE_KERNEL_BRANCH" "$MAINLINE_KERNEL_REPO" "$INT_KDIR"
+    fi
+    cd "$INT_KDIR"
+    make defconfig
+    # Force CONFIG_KEXEC ON for the jump capability
+    sed -i 's/# CONFIG_KEXEC is not set/CONFIG_KEXEC=y/' .config
+    make -j"$CORES" bzImage
 fi
-cd "$INT_KDIR"
-make defconfig
-# Force CONFIG_KEXEC ON for the jump capability
-sed -i 's/# CONFIG_KEXEC is not set/CONFIG_KEXEC=y/' .config
-make -j"$CORES" bzImage
 
 
 # --- PHASE 5: FINAL KERNEL BUILD (The Destination) ---
 echo ">>> [Phase 5] Building Final Target Kernel ($FINAL_KERNEL_BRANCH)..."
 FIN_KDIR="$WORKSPACE/final_kernel"
-if [ ! -d "$FIN_KDIR" ]; then
-    git clone --depth 1 -b "$FINAL_KERNEL_BRANCH" "$MAINLINE_KERNEL_REPO" "$FIN_KDIR"
+
+if [ "$CACHE_HIT" = "true" ] && [ -f "$FIN_KDIR/arch/x86/boot/bzImage" ]; then
+    echo "  [+] Cached final target kernel found! Skipping compilation."
+else
+    if [ ! -d "$FIN_KDIR" ]; then
+        git clone --depth 1 -b "$FINAL_KERNEL_BRANCH" "$MAINLINE_KERNEL_REPO" "$FIN_KDIR"
+    fi
+    cd "$FIN_KDIR"
+    make defconfig
+    make -j"$CORES" bzImage
 fi
-cd "$FIN_KDIR"
-make defconfig
-make -j"$CORES" bzImage
 
 
 # --- PHASE 6: KEXEC-TOOLS COMPILATION ---
 echo ">>> [Phase 6] Building static kexec-tools..."
 cd "$WORKSPACE"
-bash ./devtools/setup_kexec_tools.sh
+
+if [ "$CACHE_HIT" = "true" ] && [ -f "$WORKSPACE/kexec-tools/build/sbin/kexec" ]; then
+    echo "  [+] Cached static kexec-tools binary found! Skipping compilation."
+else
+    bash ./devtools/setup_kexec_tools.sh
+fi
 
 
 # --- PHASE 7: BUSYBOX COMPILATION (Host & Final) ---
 echo ">>> [Phase 7] Building BusyBox Environments..."
 BB_DIR="$WORKSPACE/busybox"
-if [ ! -d "$BB_DIR" ]; then
-    git clone --depth 1 -b "$BUSYBOX_BRANCH" "$BUSYBOX_REPO" "$BB_DIR"
+
+if [ "$CACHE_HIT" = "true" ] && [ -d "$BB_DIR/_install" ]; then
+    echo "  [+] Cached BusyBox environments found! Skipping compilation."
+else
+    if [ ! -d "$BB_DIR" ]; then
+        git clone --depth 1 -b "$BUSYBOX_BRANCH" "$BUSYBOX_REPO" "$BB_DIR"
+    fi
+    cd "$BB_DIR"
+    make defconfig
+    # Enable static build and disable Traffic Control to prevent build errors
+    sed -i 's/# CONFIG_STATIC is not set/CONFIG_STATIC=y/' .config
+    sed -i 's/CONFIG_TC=y/# CONFIG_TC is not set/' .config
+
+    echo "  [*] Compiling BusyBox binary..."
+    make -j"$CORES"
+
+    echo "  [*] Installing to Host Rootfs (_install)..."
+    make install
+
+    echo "  [*] Installing to Final Rootfs (final_rootfs_busybox/_install)..."
+    mkdir -p "$WORKSPACE/final_rootfs_busybox/_install"
+    make CONFIG_PREFIX="$WORKSPACE/final_rootfs_busybox/_install" install
 fi
-cd "$BB_DIR"
-make defconfig
-# Enable static build and disable Traffic Control to prevent build errors
-sed -i 's/# CONFIG_STATIC is not set/CONFIG_STATIC=y/' .config
-sed -i 's/CONFIG_TC=y/# CONFIG_TC is not set/' .config
-
-echo "  [*] Compiling BusyBox binary..."
-make -j"$CORES"
-
-echo "  [*] Installing to Host Rootfs (_install)..."
-make install
-
-echo "  [*] Installing to Final Rootfs (final_rootfs_busybox/_install)..."
-mkdir -p "$WORKSPACE/final_rootfs_busybox/_install"
-make CONFIG_PREFIX="$WORKSPACE/final_rootfs_busybox/_install" install
 
 
 # --- PHASE 8: OUT-OF-TREE TOOLS COMPILATION ---

@@ -1,19 +1,41 @@
 #!/bin/sh
 
-# 1. Create mount points and mount essential filesystems (Required for both kernels)
+# 1. Create mount points and mount essential filesystems
 mkdir -p /proc /sys /dev
 mount -t proc none /proc
 mount -t sysfs none /sys
-mount -t devtmpfs none /dev
+
+# devtmpfs might fail if the locked-down host kernel lacks support, 
+# but we ignore the error because we will manually create our node anyway!
+mount -t devtmpfs none /dev 2>/dev/null || true
 
 echo "[*] Loading kexec module..." > /dev/kmsg
+# Redirect all loader output (stdout and stderr) to the kernel log
 /bin/finit_loader /lib/kexec_mod.ko > /dev/kmsg 2>&1
 
-echo "[*] Waiting for device node..." > /dev/kmsg
-# Give devtmpfs a moment to populate the /dev directory
-while [ ! -e /dev/custom_kexec ]; do
-    sleep 0.1
-done
+echo "[*] Parsing /proc/misc to find dynamic minor number..." > /dev/kmsg
 
-echo "[*] Triggering pivot..." > /dev/kmsg
-# /bin/custom_kexec
+# Read the minor number dynamically assigned to our module by misc_register
+MINOR=$(grep custom_kexec /proc/misc | awk '{print $1}')
+
+if [ -z "$MINOR" ]; then
+    echo "[-] CRITICAL ERROR: custom_kexec not found in /proc/misc!" > /dev/kmsg
+    echo "[-] Dumping /proc/misc contents for debugging:" > /dev/kmsg
+    cat /proc/misc > /dev/kmsg
+    exit 1
+fi
+
+echo "[+] Found custom_kexec at minor number: $MINOR" > /dev/kmsg
+echo "[*] Manually creating /dev/custom_kexec node..." > /dev/kmsg
+
+# All misc devices use Major number 10. We use the extracted dynamic Minor number.
+mknod /dev/custom_kexec c 10 $MINOR
+
+echo "[*] Node created successfully. Triggering pivot..." > /dev/kmsg
+
+# Execute the usermode loader, pushing all output to the kernel log so we see it in QEMU
+/bin/custom_kexec > /dev/kmsg 2>&1
+
+# If custom_kexec fails or returns, catch it so PID 1 doesn't panic silently
+echo "[-] ERROR: custom_kexec terminated unexpectedly!" > /dev/kmsg
+while true; do sleep 1; done
