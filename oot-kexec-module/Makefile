@@ -1,5 +1,9 @@
 obj-m += kexec_mod.o
 
+# Disable Link-Time Optimization (LTO) to prevent aggressive dead-code elimination
+# from stripping our global init/exit entry points during Kbuild Stage-1.
+ccflags-y += -fno-lto
+
 # Point this to the absolute path of the chromeos kernel tree you compiled earlier
 KDIR := ../host_kernel/
 
