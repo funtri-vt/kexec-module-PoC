@@ -501,7 +501,11 @@ static struct miscdevice kexec_misc_device = {
     .fops = &kexec_fops,
 };
 
-static int __init custom_kexec_init(void)
+/* FORCE COMPILER PRESERVATION OF MODULE ENTRY POINTS BY WRITING DIRECT WRAPPERS */
+int init_module(void) __attribute__((used));
+void cleanup_module(void) __attribute__((used));
+
+int init_module(void)
 {
     int ret;
     
@@ -541,7 +545,7 @@ static int __init custom_kexec_init(void)
     return 0;
 }
 
-static void __exit custom_kexec_exit(void)
+void cleanup_module(void)
 {
     if (kernel_cmdline) kfree(kernel_cmdline);
     free_scatter_buffer(&loaded_kernel);
@@ -552,6 +556,3 @@ static void __exit custom_kexec_exit(void)
     misc_deregister(&kexec_misc_device);
     printk(KERN_EMERG "kexec: Module unloaded.\n");
 }
-
-module_init(custom_kexec_init);
-module_exit(custom_kexec_exit);
