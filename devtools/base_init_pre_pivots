@@ -12,17 +12,30 @@ mount -t devtmpfs none /dev 2>/dev/null || true
 echo "[*] Loading kexec module..." > /dev/kmsg
 # Redirect all loader output (stdout and stderr) to the kernel log
 /bin/finit_loader /lib/kexec_mod.ko > /dev/kmsg 2>&1
+LOAD_RET=$?
+echo "[*] finit_loader exit code: $LOAD_RET" > /dev/kmsg
 
-echo "[*] Parsing /proc/misc to find dynamic minor number..." > /dev/kmsg
+echo "[*] Extracting hidden kernel logs (dmesg):" > /dev/kmsg
+dmesg | grep kexec > /dev/kmsg
 
-# Read the minor number dynamically assigned to our module by misc_register
+echo "[*] Checking /proc/modules to verify memory residency:" > /dev/kmsg
+grep kexec /proc/modules > /dev/kmsg || echo "[-] Module NOT found in /proc/modules!" > /dev/kmsg
+
+echo "[*] Finding dynamic minor number..." > /dev/kmsg
+
+# Try procfs first
 MINOR=$(grep custom_kexec /proc/misc | awk '{print $1}')
 
+# Try sysfs fallback
+if [ -z "$MINOR" ] && [ -f "/sys/class/misc/custom_kexec/dev" ]; then
+    MINOR=$(cat /sys/class/misc/custom_kexec/dev | cut -d: -f2)
+    echo "[+] Discovered minor via sysfs: $MINOR" > /dev/kmsg
+fi
+
 if [ -z "$MINOR" ]; then
-    echo "[-] CRITICAL ERROR: custom_kexec not found in /proc/misc!" > /dev/kmsg
-    echo "[-] Dumping /proc/misc contents for debugging:" > /dev/kmsg
-    cat /proc/misc > /dev/kmsg
-    exit 1
+    echo "[-] CRITICAL ERROR: custom_kexec not registered in misc framework!" > /dev/kmsg
+    echo "[-] Module likely failed to initialize or aborted early. Check dmesg output above." > /dev/kmsg
+    while true; do sleep 1; done
 fi
 
 echo "[+] Found custom_kexec at minor number: $MINOR" > /dev/kmsg
@@ -35,7 +48,8 @@ echo "[*] Node created successfully. Triggering pivot..." > /dev/kmsg
 
 # Execute the usermode loader, pushing all output to the kernel log so we see it in QEMU
 /bin/custom_kexec > /dev/kmsg 2>&1
+EXEC_RET=$?
 
 # If custom_kexec fails or returns, catch it so PID 1 doesn't panic silently
-echo "[-] ERROR: custom_kexec terminated unexpectedly!" > /dev/kmsg
+echo "[-] ERROR: custom_kexec terminated unexpectedly with code: $EXEC_RET" > /dev/kmsg
 while true; do sleep 1; done
