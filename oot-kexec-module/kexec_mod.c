@@ -511,8 +511,12 @@ static struct miscdevice kexec_misc_device = {
     .fops = &kexec_fops,
 };
 
-/* FORCE COMPILER PRESERVATION OF MODULE ENTRY POINTS BY WRITING DIRECT WRAPPERS */
-static int __init custom_kexec_init(void)
+/* * DIRECT ENTRY POINTS:
+ * We directly define the raw, global init_module and cleanup_module entry points
+ * without static declarations or helper macros. This completely bypasses
+ * any compiler/linker optimization structures trying to discard alias definitions.
+ */
+int init_module(void)
 {
     int ret;
     
@@ -552,7 +556,7 @@ static int __init custom_kexec_init(void)
     return 0;
 }
 
-static void __exit custom_kexec_exit(void)
+void cleanup_module(void)
 {
     if (kernel_cmdline) kfree(kernel_cmdline);
     free_scatter_buffer(&loaded_kernel);
@@ -563,7 +567,3 @@ static void __exit custom_kexec_exit(void)
     misc_deregister(&kexec_misc_device);
     printk(KERN_EMERG "kexec: Module unloaded.\n");
 }
-
-/* REGISTER TO KBUILD STAGE 2 LINKING VIA STANDARD SYMBOL MAPS */
-module_init(custom_kexec_init);
-module_exit(custom_kexec_exit);
