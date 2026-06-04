@@ -1,4 +1,4 @@
-name: Build and Inject Kexec Shimboot Image
+name: Build and Inject Kexec Shimboot Image (grunt)
 
 on:
   push:
@@ -38,7 +38,7 @@ jobs:
             final_kernel/
             busybox/
             kexec-tools/
-          key: toolchain-cache-${{ runner.os }}-${{ steps.cache-date.outputs.date }}
+          key: toolchain-cache-${{ runner.os }}-grunt-${{ steps.cache-date.outputs.date }}
 
       - name: Execute Master Build Orchestrator
         run: |
