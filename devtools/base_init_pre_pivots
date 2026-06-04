@@ -43,6 +43,20 @@ if [ -z "$MINOR" ] && [ -f "/sys/class/misc/custom_kexec/dev" ]; then
     echo "[+] Discovered minor via sysfs: $MINOR" > /dev/kmsg
 fi
 
+echo "[*] Attempting to extract runtime kernel config..." > /dev/kmsg
+if [ -f "/proc/config.gz" ]; then
+    zcat /proc/config.gz > /dev/kmsg 2>&1 || gzip -dc /proc/config.gz > /dev/kmsg 2>&1
+    echo "[+] SUCCESS: Dumped config.gz to kmsg!" > /dev/kmsg
+else
+    echo "[-] /proc/config.gz does not exist on this host." > /dev/kmsg
+fi
+
+echo "[*] Checking kexec symbols in the running kernel..." > /dev/kmsg
+grep -i kexec_mod /proc/kallsyms > /dev/kmsg || echo "[-] No kexec_mod symbols found in kallsyms!" > /dev/kmsg
+
+echo "[*] Checking if misc_register symbol is present in the host kernel..." > /dev/kmsg
+grep -w misc_register /proc/kallsyms > /dev/kmsg || echo "[-] misc_register symbol is MISSING from this kernel!" > /dev/kmsg
+
 if [ -z "$MINOR" ]; then
     echo "[-] CRITICAL ERROR: custom_kexec not registered in misc framework!" > /dev/kmsg
     echo "[-] Module likely failed to initialize or aborted early. Check dmesg output above." > /dev/kmsg
