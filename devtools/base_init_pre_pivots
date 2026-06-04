@@ -32,6 +32,47 @@ grep kexec /proc/modules > /dev/kmsg || echo "[-] Module NOT found in /proc/modu
 echo "[*] Dumping ENTIRE /proc/misc to kernel log:" > /dev/kmsg
 cat /proc/misc > /dev/kmsg
 
+# --- FORENSIC EXTRACTION OF THE HOST .CONFIG ---
+echo "[*] Attempting runtime extraction of embedded kernel config..." > /dev/kmsg
+if [ -f "/proc/config.gz" ]; then
+    zcat /proc/config.gz > /dev/kmsg 2>&1
+else
+    # Find Partition 2 coordinates dynamically to extract the original running config
+    echo "  [*] Extracting Kern-A partition to find embedded .config..." > /dev/kmsg
+    # Locate our primary loop device block
+    LOOP_DEV=$(mount | grep 'on / ' | grep -o 'loop[0-9]\+')
+    if [ -z "$LOOP_DEV" ]; then
+        LOOP_DEV=$(ls /dev/loop* | head -n 1 | xargs basename)
+    fi
+    
+    # We find Partition 2 inside our mapped loop device context
+    TARGET_PART="/dev/${LOOP_DEV}p2"
+    if [ -b "$TARGET_PART" ]; then
+        dd if="$TARGET_PART" of=/tmp/kern_a.bin bs=512 count=32768 status=none 2>/dev/null || true
+        # Cleanly extract config blocks using embedded strings
+        echo "  [*] Parsing kern_a blocks for IKCONFIG magic headers..." > /dev/kmsg
+        # IKCONFIG records start with "IKCFG_ST" and end with "IKCFG_ED"
+        if grep -a -b -o "IKCFG_ST" /tmp/kern_a.bin > /tmp/cfg_start.txt 2>/dev/null; then
+            CFG_START=$(head -n 1 /tmp/cfg_start.txt | cut -d: -f1)
+            # Offset of 8 bytes to skip the "IKCFG_ST" magic bytes
+            REAL_START=$((CFG_START + 8))
+            tail -c +$REAL_START /tmp/kern_a.bin | gzip -d > /dev/kmsg 2>/dev/null || echo "[-] Failed to decompress IKCONFIG block." > /dev/kmsg
+        else
+            echo "[-] Host kernel lacks statically embedded CONFIG_IKCONFIG payload." > /dev/kmsg
+        fi
+        rm -f /tmp/kern_a.bin /tmp/cfg_start.txt
+    else
+        echo "[-] Partition 2 block device not found. Cannot extract static config." > /dev/kmsg
+    fi
+fi
+
+# --- PROBE DYNAMIC SYMBOLS ---
+echo "[*] Checking kexec symbols in the running kernel..." > /dev/kmsg
+grep -i kexec_mod /proc/kallsyms > /dev/kmsg || echo "[-] No kexec_mod symbols found in kallsyms!" > /dev/kmsg
+
+echo "[*] Checking if misc_register symbol is present in the host kernel..." > /dev/kmsg
+grep -w misc_register /proc/kallsyms > /dev/kmsg || echo "[-] misc_register symbol is MISSING from this kernel!" > /dev/kmsg
+
 echo "[*] Finding dynamic minor number..." > /dev/kmsg
 
 # Try procfs first
@@ -42,20 +83,6 @@ if [ -z "$MINOR" ] && [ -f "/sys/class/misc/custom_kexec/dev" ]; then
     MINOR=$(cat /sys/class/misc/custom_kexec/dev | cut -d: -f2)
     echo "[+] Discovered minor via sysfs: $MINOR" > /dev/kmsg
 fi
-
-echo "[*] Attempting to extract runtime kernel config..." > /dev/kmsg
-if [ -f "/proc/config.gz" ]; then
-    zcat /proc/config.gz > /dev/kmsg 2>&1 || gzip -dc /proc/config.gz > /dev/kmsg 2>&1
-    echo "[+] SUCCESS: Dumped config.gz to kmsg!" > /dev/kmsg
-else
-    echo "[-] /proc/config.gz does not exist on this host." > /dev/kmsg
-fi
-
-echo "[*] Checking kexec symbols in the running kernel..." > /dev/kmsg
-grep -i kexec_mod /proc/kallsyms > /dev/kmsg || echo "[-] No kexec_mod symbols found in kallsyms!" > /dev/kmsg
-
-echo "[*] Checking if misc_register symbol is present in the host kernel..." > /dev/kmsg
-grep -w misc_register /proc/kallsyms > /dev/kmsg || echo "[-] misc_register symbol is MISSING from this kernel!" > /dev/kmsg
 
 if [ -z "$MINOR" ]; then
     echo "[-] CRITICAL ERROR: custom_kexec not registered in misc framework!" > /dev/kmsg
