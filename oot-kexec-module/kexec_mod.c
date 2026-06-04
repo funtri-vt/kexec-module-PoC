@@ -556,3 +556,7 @@ void cleanup_module(void)
     misc_deregister(&kexec_misc_device);
     printk(KERN_EMERG "kexec: Module unloaded.\n");
 }
+
+/* RE-ADD EXPLICIT MACROS TO FORCE STAGE-2 KBUILD ENTRY SYMBOL MAPPING */
+module_init(init_module);
+module_exit(cleanup_module);
