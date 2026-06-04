@@ -512,14 +512,10 @@ static struct miscdevice kexec_misc_device = {
 };
 
 /* * ISO C90 Compliant Module Helper Wrapper.
- * Made non-static and explicitly marked as used/noinline to prevent aggressive
- * Link-Time Optimization (LTO) or Dead-Code Elimination (DCE) from stripping
- * the function body during Stage-1 compilation.
+ * Using kernel native compiler macros (__used, noinline) instead of raw GCC 
+ * attributes to cleanly bypass macro definition expansions during Kbuild compilation.
  */
-int custom_module_wrapper_init(void) __attribute__((used, noinline));
-void custom_module_wrapper_exit(void) __attribute__((used, noinline));
-
-int custom_module_wrapper_init(void)
+int __used noinline custom_module_wrapper_init(void)
 {
     int ret;
     
@@ -559,7 +555,7 @@ int custom_module_wrapper_init(void)
     return 0;
 }
 
-void custom_module_wrapper_exit(void)
+void __used noinline custom_module_wrapper_exit(void)
 {
     if (kernel_cmdline) kfree(kernel_cmdline);
     free_scatter_buffer(&loaded_kernel);
