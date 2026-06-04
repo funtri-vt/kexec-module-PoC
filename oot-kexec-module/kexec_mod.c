@@ -214,6 +214,17 @@ static void execute_trampoline(void)
     unsigned long *pgd, *pud, *pmd;
     unsigned long *p4d = NULL;
     size_t bytes_to_copy, src_offset;
+    unsigned long *gdt;
+    unsigned short *gdt_limit;
+    unsigned long *gdt_base;
+    unsigned char *stub;
+    int offset = 0;
+    unsigned int gdt_desc_rel;
+    unsigned long safe_rsp;
+    unsigned int offset_32bit;
+    unsigned long *stack_frame;
+    unsigned int zp_phys;
+    unsigned int stable_boot_stack;
 
     /* --- PHASE 1: SAFE ALLOCATIONS & STUB BUILDING (Interrupts ON, Scheduling Active) --- */
     low_page_virt = __get_free_page(GFP_KERNEL | GFP_DMA | __GFP_ZERO);
@@ -259,40 +270,39 @@ static void execute_trampoline(void)
     }
     pud[0] = virt_to_phys(pmd) | 0x3;
 
-    /* Build the 32-bit GDT */
-    unsigned long *gdt = (unsigned long *)(low_page_virt + 2048);
+    /* Build the 32-bit GDT - Declared C90 compliant at top of scope */
+    gdt = (unsigned long *)(low_page_virt + 2048);
     gdt[0] = 0x0000000000000000ULL; /* Null */
     gdt[1] = 0x00af9b000000ffffULL; /* 64-bit CS */
     gdt[2] = 0x00cf9a000000ffffULL; /* 32-bit CS */
     gdt[3] = 0x00cf92000000ffffULL; /* 32-bit DS */
 
-    unsigned short *gdt_limit = (unsigned short *)(low_page_virt + 2032);
-    unsigned long *gdt_base = (unsigned long *)(low_page_virt + 2034);
+    gdt_limit = (unsigned short *)(low_page_virt + 2032);
+    gdt_base = (unsigned long *)(low_page_virt + 2034);
     *gdt_limit = 31;
     *gdt_base = low_page_phys + 2048;
 
     /* Assembling the Raw Machine Code */
-    unsigned char *stub = (unsigned char *)low_page_virt;
-    int offset = 0;
+    stub = (unsigned char *)low_page_virt;
 
     stub[offset++] = 0xfa; /* cli */
 
     /* lgdt */
     stub[offset++] = 0x0f; stub[offset++] = 0x01; stub[offset++] = 0x15;
-    unsigned int gdt_desc_rel = 2032 - (offset + 4);
+    gdt_desc_rel = 2032 - (offset + 4);
     memcpy(&stub[offset], &gdt_desc_rel, 4); offset += 4;
 
     /* Switch stack */
     stub[offset++] = 0x48; stub[offset++] = 0xbc; /* mov rsp, imm64 */
-    unsigned long safe_rsp = low_page_phys + 1024 - 16;
+    safe_rsp = low_page_phys + 1024 - 16;
     memcpy(&stub[offset], &safe_rsp, 8); offset += 8;
 
     /* lretq */
     stub[offset++] = 0x48; stub[offset++] = 0xcb;
 
     /* Build the target Far Return stack frame */
-    unsigned int offset_32bit = offset;
-    unsigned long *stack_frame = (unsigned long *)(low_page_virt + 1024 - 16);
+    offset_32bit = offset;
+    stack_frame = (unsigned long *)(low_page_virt + 1024 - 16);
     stack_frame[0] = low_page_phys + offset_32bit; /* Target RIP */
     stack_frame[1] = 0x10; /* Target CS */
 
@@ -320,7 +330,7 @@ static void execute_trampoline(void)
 
     /* Zero Page Pointer */
     stub[offset++] = 0xbe;
-    unsigned int zp_phys = (unsigned int)zero_page_phys;
+    zp_phys = (unsigned int)zero_page_phys;
     memcpy(&stub[offset], &zp_phys, 4); offset += 4;
 
     /* CRITICAL 6.12 STACK STABILITY FIX:
@@ -328,7 +338,7 @@ static void execute_trampoline(void)
      * hardcoded physical memory address (e.g., 0x90000) right before the jump. 
      */
     stub[offset++] = 0xbc; /* mov esp, imm32 */
-    unsigned int stable_boot_stack = 0x90000;
+    stable_boot_stack = 0x90000;
     memcpy(&stub[offset], &stable_boot_stack, 4); offset += 4;
 
     /* Clear Boot Registers */
@@ -502,10 +512,7 @@ static struct miscdevice kexec_misc_device = {
 };
 
 /* FORCE COMPILER PRESERVATION OF MODULE ENTRY POINTS BY WRITING DIRECT WRAPPERS */
-int init_module(void) __attribute__((used));
-void cleanup_module(void) __attribute__((used));
-
-int init_module(void)
+static int __init custom_kexec_init(void)
 {
     int ret;
     
@@ -545,7 +552,7 @@ int init_module(void)
     return 0;
 }
 
-void cleanup_module(void)
+static void __exit custom_kexec_exit(void)
 {
     if (kernel_cmdline) kfree(kernel_cmdline);
     free_scatter_buffer(&loaded_kernel);
@@ -557,6 +564,6 @@ void cleanup_module(void)
     printk(KERN_EMERG "kexec: Module unloaded.\n");
 }
 
-/* RE-ADD EXPLICIT MACROS TO FORCE STAGE-2 KBUILD ENTRY SYMBOL MAPPING */
-module_init(init_module);
-module_exit(cleanup_module);
+/* REGISTER TO KBUILD STAGE 2 LINKING VIA STANDARD SYMBOL MAPS */
+module_init(custom_kexec_init);
+module_exit(custom_kexec_exit);
