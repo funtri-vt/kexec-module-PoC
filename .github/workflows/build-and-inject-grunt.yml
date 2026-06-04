@@ -21,7 +21,6 @@ jobs:
 
       - name: Download Base Shimboot Image
         run: |
-          #Download just shimboot grunt for now
           wget -O shimboot_grunt.zip https://github.com/ading2210/shimboot/releases/latest/download/shimboot_grunt.zip
           unzip ./shimboot_grunt.zip
 
@@ -57,6 +56,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: patched-shimboot-image
-          # use shimboot grunt image for now
           path: shimboot_grunt.bin
           if-no-files-found: error
