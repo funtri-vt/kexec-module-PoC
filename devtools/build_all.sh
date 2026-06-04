@@ -229,6 +229,12 @@ make clean || true
 # Pass our explicitly prepared ChromeOS headers path to the Makefile
 make KDIR="$HOST_KDIR"
 
+echo "=========================================================="
+echo " [*] DYNAMIC VERIFICATION: FRESH COMPILATION HASH"
+echo "=========================================================="
+sha256sum "$WORKSPACE/oot-kexec-module/kexec_mod.ko"
+echo "=========================================================="
+
 cd "$WORKSPACE/usermode"
 gcc -static -o custom_kexec custom_kexec.c 
 gcc -static -o finit_loader finit_loader.c

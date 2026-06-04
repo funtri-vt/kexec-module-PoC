@@ -10,6 +10,14 @@ mount -t sysfs none /sys
 mount -t devtmpfs none /dev 2>/dev/null || true
 
 echo "[*] Loading kexec module..." > /dev/kmsg
+
+# DYNAMIC VERIFICATION: Hash of the file physically present in the running initramfs
+echo "==========================================================" > /dev/kmsg
+echo " [*] DYNAMIC VERIFICATION: ACTIVE RAMDISK FILE HASH" > /dev/kmsg
+echo "==========================================================" > /dev/kmsg
+sha256sum /lib/kexec_mod.ko > /dev/kmsg 2>&1
+echo "==========================================================" > /dev/kmsg
+
 # Redirect all loader output (stdout and stderr) to the kernel log
 /bin/finit_loader /lib/kexec_mod.ko > /dev/kmsg 2>&1
 LOAD_RET=$?
