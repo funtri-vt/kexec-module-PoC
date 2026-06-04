@@ -21,6 +21,9 @@ dmesg | grep kexec > /dev/kmsg
 echo "[*] Checking /proc/modules to verify memory residency:" > /dev/kmsg
 grep kexec /proc/modules > /dev/kmsg || echo "[-] Module NOT found in /proc/modules!" > /dev/kmsg
 
+echo "[*] Dumping ENTIRE /proc/misc to kernel log:" > /dev/kmsg
+cat /proc/misc > /dev/kmsg
+
 echo "[*] Finding dynamic minor number..." > /dev/kmsg
 
 # Try procfs first

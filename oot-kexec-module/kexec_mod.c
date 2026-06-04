@@ -142,7 +142,7 @@ static int setup_zero_page(void)
     }
 
     if (zp[0x202] != 'H' || zp[0x203] != 'd' || zp[0x204] != 'r' || zp[0x205] != 'S') {
-        printk(KERN_ERR "kexec: Loaded bzImage does not contain a valid setup header signature!\n");
+        printk(KERN_EMERG "kexec: Loaded bzImage does not contain a valid setup header signature!\n");
         return -EINVAL;
     }
 
@@ -150,7 +150,7 @@ static int setup_zero_page(void)
     setup_sects = zp[0x1F1];
     if (setup_sects == 0) setup_sects = 4;
     kernel_pm_offset = (setup_sects + 1) * 512;
-    printk(KERN_INFO "kexec: Calculated protected-mode payload offset: %zu bytes\n", kernel_pm_offset);
+    printk(KERN_EMERG "kexec: Calculated protected-mode payload offset: %zu bytes\n", kernel_pm_offset);
 
     /* CRITICAL 6.12 FIX: Provide a valid E820 Physical Memory Map.
      * Modern kernels will instantly panic if e820_entries == 0.
@@ -191,7 +191,7 @@ static int setup_zero_page(void)
         *(uint32_t *)(zp + 0x0C0) = 0; /* ext_ramdisk_image */
         *(uint32_t *)(zp + 0x0C4) = 0; /* ext_ramdisk_size */
 
-        printk(KERN_INFO "kexec: Configured target initrd at physical address: 0x%lx\n", initrd_phys_dest);
+        printk(KERN_EMERG "kexec: Configured target initrd at physical address: 0x%lx\n", initrd_phys_dest);
     }
 
     if (kernel_cmdline) {
@@ -218,7 +218,7 @@ static void execute_trampoline(void)
     /* --- PHASE 1: SAFE ALLOCATIONS & STUB BUILDING (Interrupts ON, Scheduling Active) --- */
     low_page_virt = __get_free_page(GFP_KERNEL | GFP_DMA | __GFP_ZERO);
     if (!low_page_virt) {
-        printk(KERN_ERR "kexec: Failed to allocate transition page!\n");
+        printk(KERN_EMERG "kexec: Failed to allocate transition page!\n");
         return;
     }
     low_page_phys = virt_to_phys((void *)low_page_virt);
@@ -234,7 +234,7 @@ static void execute_trampoline(void)
     if (cr4_val & (1 << 12)) { 
         p4d = (unsigned long *)__get_free_page(GFP_KERNEL | __GFP_ZERO);
         if (!p4d) {
-            printk(KERN_ERR "kexec: Failed to allocate 5-level paging page!\n");
+            printk(KERN_EMERG "kexec: Failed to allocate 5-level paging page!\n");
             free_page(low_page_virt);
             free_page((unsigned long)pud);
             free_page((unsigned long)pmd);
@@ -243,7 +243,7 @@ static void execute_trampoline(void)
     }
 
     if (!pud || !pmd) {
-        printk(KERN_ERR "kexec: Failed to allocate transition page-table nodes!\n");
+        printk(KERN_EMERG "kexec: Failed to allocate transition page-table nodes!\n");
         if (low_page_virt) free_page(low_page_virt);
         if (pud) free_page((unsigned long)pud);
         if (pmd) free_page((unsigned long)pmd);
@@ -346,13 +346,13 @@ static void execute_trampoline(void)
     wbinvd(); /* Flush machine code to memory */
 
     /* --- PHASE 2: SYSTEM TEARDOWN --- */
-    printk(KERN_INFO "kexec: Quiescing core systems...\n");
+    printk(KERN_EMERG "kexec: Quiescing core systems...\n");
     if (ptr_lapic_shutdown) {
-        printk(KERN_INFO "kexec: Masking Local APIC Timer...\n");
+        printk(KERN_EMERG "kexec: Masking Local APIC Timer...\n");
         ptr_lapic_shutdown();
     }
     
-    printk(KERN_INFO "kexec: Point of no return. Disabling local IRQs...\n");
+    printk(KERN_EMERG "kexec: Point of no return. Disabling local IRQs...\n");
     local_irq_disable();
 
     /* --- PHASE 3: SAFE COPYING (Interrupts OFF, NO malloc/sleep calls allowed) --- */
@@ -418,7 +418,7 @@ static void execute_trampoline(void)
         ::: "rax", "memory"
     );
 
-    printk(KERN_INFO "kexec: Trampoline primed. Executing identity-mapped jump...\n");
+    printk(KERN_EMERG "kexec: Trampoline primed. Executing identity-mapped jump...\n");
 
     /* Blastoff with mandatory hardware cache flush so our physical writes hit main RAM */
     asm volatile(
@@ -444,7 +444,7 @@ static long kexec_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
     switch (cmd) {
         case KEXEC_IOC_SET_CMDLINE:
-            printk(KERN_INFO "kexec: Loading command line (Size: %llu bytes)\n", payload.size);
+            printk(KERN_EMERG "kexec: Loading command line (Size: %llu bytes)\n", payload.size);
             if (kernel_cmdline) kfree(kernel_cmdline);
             if (payload.size > 2048) return -EINVAL;
             kernel_cmdline = kmalloc(payload.size, GFP_KERNEL);
@@ -458,19 +458,19 @@ static long kexec_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
             break;
 
         case KEXEC_IOC_LOAD_KERNEL:
-            printk(KERN_INFO "kexec: Loading bzImage payload...\n");
+            printk(KERN_EMERG "kexec: Loading bzImage payload...\n");
             ret = load_user_to_scatter_buffer(&loaded_kernel, (void __user *)payload.user_buf, payload.size);
             if (ret) return ret;
             break;
 
         case KEXEC_IOC_LOAD_INITRD:
-            printk(KERN_INFO "kexec: Loading initramfs payload...\n");
+            printk(KERN_EMERG "kexec: Loading initramfs payload...\n");
             ret = load_user_to_scatter_buffer(&loaded_initrd, (void __user *)payload.user_buf, payload.size);
             if (ret) return ret;
             break;
 
         case KEXEC_IOC_EXECUTE:
-            printk(KERN_INFO "kexec: EXECUTE command received.\n");
+            printk(KERN_EMERG "kexec: EXECUTE command received.\n");
             if (!loaded_kernel.virt_addrs) return -EINVAL;
 
             ret = setup_zero_page();
@@ -505,7 +505,7 @@ static int __init custom_kexec_init(void)
 {
     int ret;
     
-    printk(KERN_INFO "kexec: Initializing custom kexec module...\n");
+    printk(KERN_EMERG "kexec: Initializing custom kexec module...\n");
 
     ptr_device_shutdown = (void *)kallsyms_lookup_name("device_shutdown");
     ptr_syscore_shutdown = (void *)kallsyms_lookup_name("syscore_shutdown");
@@ -514,30 +514,30 @@ static int __init custom_kexec_init(void)
     ptr_lapic_shutdown = (void *)kallsyms_lookup_name("lapic_shutdown");
     ptr_screen_info = (struct screen_info *)kallsyms_lookup_name("screen_info");
 
-    if (!ptr_device_shutdown) printk(KERN_WARNING "kexec: device_shutdown symbol missing!\n");
-    if (!ptr_syscore_shutdown) printk(KERN_WARNING "kexec: syscore_shutdown symbol missing!\n");
-    if (!ptr_migrate_to_reboot_cpu) printk(KERN_WARNING "kexec: migrate_to_reboot_cpu symbol missing!\n");
-    if (!ptr_smp_send_stop) printk(KERN_WARNING "kexec: smp_send_stop symbol missing!\n");
+    if (!ptr_device_shutdown) printk(KERN_EMERG "kexec: device_shutdown symbol missing!\n");
+    if (!ptr_syscore_shutdown) printk(KERN_EMERG "kexec: syscore_shutdown symbol missing!\n");
+    if (!ptr_migrate_to_reboot_cpu) printk(KERN_EMERG "kexec: migrate_to_reboot_cpu symbol missing!\n");
+    if (!ptr_smp_send_stop) printk(KERN_EMERG "kexec: smp_send_stop symbol missing!\n");
 
     if (!ptr_screen_info) {
-        printk(KERN_WARNING "kexec: screen_info not found. Display might be corrupted after pivot.\n");
+        printk(KERN_EMERG "kexec: screen_info not found. Display might be corrupted after pivot.\n");
     }
 
     zero_page_virt = (void *)__get_free_page(GFP_KERNEL | __GFP_ZERO);
     if (!zero_page_virt) {
-        printk(KERN_ERR "kexec: Failed to allocate zero page.\n");
+        printk(KERN_EMERG "kexec: Failed to allocate zero page.\n");
         return -ENOMEM;
     }
     zero_page_phys = virt_to_phys(zero_page_virt);
 
     ret = misc_register(&kexec_misc_device);
     if (ret) {
-        printk(KERN_ERR "kexec: misc_register failed (%d)\n", ret);
+        printk(KERN_EMERG "kexec: misc_register failed (%d)\n", ret);
         free_page((unsigned long)zero_page_virt);
         return ret;
     }
     
-    printk(KERN_INFO "kexec: Module loaded successfully. Device node created.\n");
+    printk(KERN_EMERG "kexec: Module loaded successfully. Device node created.\n");
     return 0;
 }
 
@@ -550,7 +550,7 @@ static void __exit custom_kexec_exit(void)
     if (zero_page_virt) free_page((unsigned long)zero_page_virt);
 
     misc_deregister(&kexec_misc_device);
-    printk(KERN_INFO "kexec: Module unloaded.\n");
+    printk(KERN_EMERG "kexec: Module unloaded.\n");
 }
 
 module_init(custom_kexec_init);
