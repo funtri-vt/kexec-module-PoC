@@ -512,10 +512,10 @@ static struct miscdevice kexec_misc_device = {
 };
 
 /* * ISO C90 Compliant Module Helper Wrapper.
- * Re-routes the core init and cleanup points through helper routines to prevent 
- * Stage-2 modpost from stripping the module's entry points in the linked .mod.c
+ * Made non-static to ensure globally visible linkage names that can be safely
+ * aliased by modpost under any preprocessor optimization rules or custom LTO layers.
  */
-static int __init custom_module_wrapper_init(void)
+int custom_module_wrapper_init(void)
 {
     int ret;
     
@@ -555,7 +555,7 @@ static int __init custom_module_wrapper_init(void)
     return 0;
 }
 
-static void __exit custom_module_wrapper_exit(void)
+void custom_module_wrapper_exit(void)
 {
     if (kernel_cmdline) kfree(kernel_cmdline);
     free_scatter_buffer(&loaded_kernel);
