@@ -6,10 +6,25 @@
 /bin/busybox mount -t sysfs none /sys
 /bin/busybox mount -t devtmpfs none /dev 2>/dev/null || true
 
+# --- DYNAMIC HARDWARE BINDING ---
+# Parse the relayed command line to find the exact hardware port we booted with
+CMDLINE=$(cat /proc/cmdline)
+TARGET_TTY="ttyS0" # Fallback if missing
+for arg in $CMDLINE; do
+    case "$arg" in
+        target_console=*)
+            RAW_TTY="${arg#target_console=}"
+            # Strip baud rate from string if present (e.g. ttyS0,115200 -> ttyS0)
+            TARGET_TTY=$(echo "$RAW_TTY" | cut -d, -f1)
+            ;;
+    esac
+done
+TARGET_DEV="/dev/$TARGET_TTY"
+
 # 2. Print a welcome message to the kernel log
 /bin/busybox echo "==========================================" > /dev/kmsg
 /bin/busybox echo "   WELCOME TO THE FINAL SHELL" > /dev/kmsg
-/bin/busybox echo "   SPAWNING DIRECT SERIAL CONSOLE..." > /dev/kmsg
+/bin/busybox echo "   SPAWNING DIRECT CONSOLE ON $TARGET_DEV..." > /dev/kmsg
 /bin/busybox echo "==========================================" > /dev/kmsg
 
 # 3. Setup Environment
@@ -19,15 +34,15 @@ export TERM="linux"
 export PS1="Final Shell# "
 
 # 4. Clear any stale serial line settings to ensure clean input/output
-/bin/busybox stty -F /dev/ttyS0 clocal sane 2>/dev/null || true
+/bin/busybox stty -F $TARGET_DEV clocal sane 2>/dev/null || true
 
 # 5. Launch the shell!
-# We attempt cttyhack first as it establishes a true controlling terminal (enabling job control).
-# If cttyhack is not compiled into this busybox build, we fallback to direct redirection.
+# We attempt cttyhack first as it establishes a true controlling terminal.
+# We bind explicitly to the dynamically detected hardware device.
 echo ""
 echo "=========================================="
 echo "   WELCOME TO THE FINAL SHELL"
 echo "=========================================="
 echo ""
 
-exec /bin/busybox setsid /bin/busybox cttyhack /bin/sh || exec /bin/busybox sh -i </dev/ttyS0 >/dev/ttyS0 2>&1
+exec /bin/busybox setsid /bin/busybox cttyhack /bin/sh || exec /bin/busybox sh -i <$TARGET_DEV >$TARGET_DEV 2>&1

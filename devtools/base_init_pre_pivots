@@ -9,7 +9,23 @@ mount -t sysfs none /sys
 # but we ignore the error because we will manually create our node anyway!
 mount -t devtmpfs none /dev 2>/dev/null || true
 
-echo "[*] Loading kexec module..." > /dev/kmsg
+# --- DYNAMIC TTY DETECTION ---
+# Ask the host kernel what console is actively being used by the hardware
+ACTIVE_TTY=$(cat /sys/class/tty/console/active 2>/dev/null | awk '{print $1}')
+if [ -z "$ACTIVE_TTY" ]; then
+    ACTIVE_TTY="tty1" # Fallback to physical screen if undetected
+elif [ "$ACTIVE_TTY" = "tty0" ]; then
+    ACTIVE_TTY="tty1" # Map foreground virtual console to explicit tty1
+fi
+
+# Append standard baud rate if it detects a serial port
+if [ "$ACTIVE_TTY" = "ttyS0" ] || [ "$ACTIVE_TTY" = "ttyS1" ] || [ "$ACTIVE_TTY" = "ttyS2" ]; then
+    TARGET_CONSOLE_ARG="target_console=$ACTIVE_TTY,115200n8"
+else
+    TARGET_CONSOLE_ARG="target_console=$ACTIVE_TTY"
+fi
+
+echo "[*] Loading kexec module (Detected Hardware Console: $ACTIVE_TTY)..." > /dev/kmsg
 
 # DYNAMIC VERIFICATION: Hash of the file physically present in the running initramfs
 echo "==========================================================" > /dev/kmsg
@@ -98,8 +114,8 @@ mknod /dev/custom_kexec c 10 $MINOR
 
 echo "[*] Node created successfully. Triggering pivot..." > /dev/kmsg
 
-# Execute the usermode loader, pushing all output to the kernel log so we see it in QEMU
-/bin/custom_kexec > /dev/kmsg 2>&1
+# Execute the usermode loader with dynamic console, pushing all output to the kernel log
+/bin/custom_kexec --console "$TARGET_CONSOLE_ARG" > /dev/kmsg 2>&1
 EXEC_RET=$?
 
 # If custom_kexec fails or returns, catch it so PID 1 doesn't panic silently

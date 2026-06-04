@@ -23,6 +23,18 @@ else
     exit 1
 fi
 
+# 1.5 Setup Shimboot handoff stub
+echo "[*] Step 1.5: Deploying host_sbin_init handoff stub..."
+if [ -f "$WORKSPACE/devtools/host_sbin_init" ]; then
+    mkdir -p "$WORKSPACE/busybox/_install/sbin"
+    cp "$WORKSPACE/devtools/host_sbin_init" "$WORKSPACE/busybox/_install/sbin/init"
+    chmod +x "$WORKSPACE/busybox/_install/sbin/init"
+    echo "  [+] Shimboot /sbin/init handoff stub installed."
+else
+    echo "  [-] Error: Missing source file $WORKSPACE/devtools/host_sbin_init"
+    exit 1
+fi
+
 # 2. Setup final rootfs init script
 echo "[*] Step 2: Deploying final_rootfs_init..."
 if [ -f "$WORKSPACE/devtools/final_rootfs_init" ]; then

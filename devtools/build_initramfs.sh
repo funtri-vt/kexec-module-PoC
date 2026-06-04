@@ -132,12 +132,28 @@ echo ""
 
 echo "[AUTOMATON] Parsing and loading final target kernel..."
 
+# Extract the target_console dynamically passed from the Host environment
+CMDLINE=$(cat /proc/cmdline)
+TARGET_CONSOLE_ARG=""
+TARGET_TTY="ttyS0,115200" # Fallback if missing
+
+for arg in $CMDLINE; do
+    case "$arg" in
+        target_console=*)
+            TARGET_CONSOLE_ARG="$arg"
+            TARGET_TTY="${arg#target_console=}"
+            ;;
+    esac
+done
+
+echo "[AUTOMATON] Relaying detected console parameter: $TARGET_CONSOLE_ARG"
+
 # Load the final kernel natively using kexec-tools
-# - Restored console=tty0 to prevent sys_open("/dev/console") from hanging PID 1
-# - Added i8042 reset flags to prevent input controller freezes in QEMU/Hardware.
+# - Merged dynamic console variables to ensure correct physical output
+# - Appended TARGET_CONSOLE_ARG so the final kernel can parse it too
 /sbin/kexec -l /payload/bzImage \
     --initrd=/payload/initramfs.cpio.gz \
-    --command-line="console=tty0 console=ttyS0,115200 root=/dev/ram0 rw debug earlyprintk=serial,ttyS0,115200 loglevel=8 initcall_debug cros_debug cros_secure=0 reset_devices irqpoll i8042.reset i8042.nomux noapic"
+    --command-line="console=tty0 console=$TARGET_TTY $TARGET_CONSOLE_ARG root=/dev/ram0 rw debug earlyprintk=serial,ttyS0,115200 loglevel=8 initcall_debug cros_debug cros_secure=0 reset_devices irqpoll i8042.reset i8042.nomux noapic"
 
 # Execute the native handoff (this properly shuts down the UART!)
 echo "[AUTOMATON] Executing native kexec jump NOW."
@@ -183,7 +199,7 @@ rm -f boot/target_bzImage
 rm -f boot/target_initrd.cpio.gz
 
 # 1. Load Custom Kexec Assets
-echo "[*] Injecting custom kexec module, loader binary, and finit binary..."
+echo "[*] Injecting custom kexec module and loader binary..."
 cp "$MODULE_SRC" "lib/kexec_mod.ko"
 cp "$USERMODE_SRC" "bin/custom_kexec"
 cp "$FINIT_USERMODE_SRC" "bin/finit_loader"

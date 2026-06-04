@@ -63,12 +63,28 @@ int main(int argc, char *argv[])
 
     const char *kernel_path = "/boot/target_bzImage";
     const char *initrd_path = "/boot/target_initrd.cpio.gz";
-    /* Command line fully updated to fix TTY dropouts, and physically hammer the keyboard controller */
-    const char *cmdline = "console=tty0 console=ttyS0,115200 root=/dev/ram0 debug reset_devices i8042.reset i8042.nomux i8042.nopnp i8042.noloop debug";
+    
+    /* Base command line parameters to preserve safe keyboard reset and debugging capabilities */
+    const char *base_cmdline = "console=tty0 console=ttyS0,115200 root=/dev/ram0 debug reset_devices i8042.reset i8042.nomux i8042.nopnp i8042.noloop debug";
+    char cmdline[2048];
+
+    /* Copy base command line to our working buffer safely */
+    strncpy(cmdline, base_cmdline, sizeof(cmdline) - 1);
+    cmdline[sizeof(cmdline) - 1] = '\0';
+
+    /* Parse potential command-line parameters to dynamically append target consoles */
+    for (int i = 1; i < argc; i++) {
+        if ((strcmp(argv[i], "--console") == 0 || strcmp(argv[i], "-c") == 0) && i + 1 < argc) {
+            size_t current_len = strlen(cmdline);
+            snprintf(cmdline + current_len, sizeof(cmdline) - current_len, " %s", argv[i + 1]);
+            break;
+        }
+    }
 
     printf("========================================================\n");
     printf("   Starting Custom Kexec User-Space Loader\n");
     printf("========================================================\n");
+    printf("[*] Configured Command Line:\n    %s\n\n", cmdline);
 
     /* ---------------------------------------------------------
      * PHASE 1: Load Files into Memory
