@@ -1,0 +1,62 @@
+name: Build and Inject Kexec Shimboot Image
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build-pipeline:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          # Install compilation toolchains, partition mappers, and cgpt (vboot-utils)
+          sudo apt-get install -y build-essential libncurses-dev bison flex libssl-dev libelf-dev autoconf automake libtool bc kpartx vboot-utils cgpt cpio
+
+      - name: Download Base Shimboot Image
+        run: |
+          #Download just shimboot grunt for now
+          wget -O shimboot_grunt.zip https://github.com/ading2210/shimboot/releases/latest/download/shimboot_octopus.zip
+          unzip ./shimboot_octopus.zip
+
+      - name: Get Current Date for Cache Key
+        id: cache-date
+        run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+
+      - name: Cache Heavy Compilation Assets
+        id: toolchain-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            intermediate_kernel/
+            final_kernel/
+            busybox/
+            kexec-tools/
+          key: toolchain-cache-${{ runner.os }}-${{ steps.cache-date.outputs.date }}
+
+      - name: Execute Master Build Orchestrator
+        run: |
+          chmod +x devtools/build_all.sh
+          chmod +x devtools/setup_kexec_tools.sh
+          chmod +x devtools/final_build_step.sh
+          chmod +x devtools/build_initramfs.sh
+          chmod +x devtools/inject_to_shim.sh
+          chmod +x devtools/extract_from_shim.sh 
+          chmod +x devtools/detect_version_magic.sh 
+          
+          # Run the master orchestrator, passing the cache-hit variable so it knows to skip building
+          sudo CACHE_HIT="${{ steps.toolchain-cache.outputs.cache-hit }}" BOARD=octopus ./devtools/build_all.sh
+
+      - name: Upload Patched Shimboot Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: patched-shimboot-image
+          # use shimboot grunt image for now
+          path: shimboot_grunt.bin
+          if-no-files-found: error
