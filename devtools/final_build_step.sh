@@ -15,6 +15,8 @@ echo "[*] Project Workspace: $WORKSPACE"
 # 1. Setup host base init script
 echo "[*] Step 1: Deploying base_init_pre_pivots..."
 if [ -f "$WORKSPACE/devtools/base_init_pre_pivots" ]; then
+    # Cleanly remove the destination first to prevent symlink-following traps
+    rm -f "$WORKSPACE/busybox/_install/init"
     cp "$WORKSPACE/devtools/base_init_pre_pivots" "$WORKSPACE/busybox/_install/init"
     chmod +x "$WORKSPACE/busybox/_install/init"
     echo "  [+] Base init installed and set to executable."
@@ -27,9 +29,12 @@ fi
 echo "[*] Step 1.5: Deploying host_sbin_init handoff stub..."
 if [ -f "$WORKSPACE/devtools/host_sbin_init" ]; then
     mkdir -p "$WORKSPACE/busybox/_install/sbin"
+    # CRITICAL FIX: Force removal of the busybox-generated symlink pointing to busybox!
+    # If we do not delete this first, cp will overwrite the real /bin/busybox executable with our script!
+    rm -f "$WORKSPACE/busybox/_install/sbin/init"
     cp "$WORKSPACE/devtools/host_sbin_init" "$WORKSPACE/busybox/_install/sbin/init"
     chmod +x "$WORKSPACE/busybox/_install/sbin/init"
-    echo "  [+] Shimboot /sbin/init handoff stub installed."
+    echo "  [+] Shimboot /sbin/init handoff stub installed safely."
 else
     echo "  [-] Error: Missing source file $WORKSPACE/devtools/host_sbin_init"
     exit 1
@@ -41,6 +46,8 @@ if [ -f "$WORKSPACE/devtools/final_rootfs_init" ]; then
     # Ensure the destination directory exists
     mkdir -p "$WORKSPACE/final_rootfs_busybox/_install"
     
+    # Cleanly remove the destination first
+    rm -f "$WORKSPACE/final_rootfs_busybox/_install/init"
     cp "$WORKSPACE/devtools/final_rootfs_init" "$WORKSPACE/final_rootfs_busybox/_install/init"
     chmod +x "$WORKSPACE/final_rootfs_busybox/_install/init"
     echo "  [+] Final rootfs init installed and set to executable."
