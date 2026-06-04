@@ -200,6 +200,10 @@ BB_DIR="$WORKSPACE/busybox"
 
 if [ "$CACHE_HIT" = "true" ] && [ -d "$BB_DIR/_install" ]; then
     echo "  [+] Cached BusyBox environments found! Skipping compilation."
+    echo "  [*] Populating final target installation trees..."
+    cd "$BB_DIR"
+    mkdir -p "$WORKSPACE/final_rootfs_busybox/_install"
+    make CONFIG_PREFIX="$WORKSPACE/final_rootfs_busybox/_install" install
 else
     if [ ! -d "$BB_DIR" ]; then
         git clone --depth 1 -b "$BUSYBOX_BRANCH" "$BUSYBOX_REPO" "$BB_DIR"
