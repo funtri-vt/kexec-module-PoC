@@ -27,10 +27,14 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    printf("[*] File opened successfully (FD: %d). Calling finit_module...\n", fd);
+    printf("[*] File opened successfully (FD: %d). Calling finit_module with trigger param...\n", fd);
 
-    // Call finit_module(fd, uargs, flags)
-    long rc = syscall(__NR_finit_module, fd, "", 0);
+    /* * PASS IN THE PARAMETER TRIGGER:
+     * Instead of an empty string, we pass "trigger_init=1" as our loader argument.
+     * When finit_module maps the module, it immediately runs the 'trigger_init' 
+     * parameter callback block in Ring 0, bypassing the struct module offset table!
+     */
+    long rc = syscall(__NR_finit_module, fd, "trigger_init=1", 0);
     
     if (rc != 0) {
         fprintf(stderr, "[-] finit_module failed: %s (errno: %d)\n", 

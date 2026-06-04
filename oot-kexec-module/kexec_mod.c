@@ -17,7 +17,7 @@
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Developer");
-MODULE_DESCRIPTION("Custom Out-of-Tree Kexec with Scatter-Gather Trampoline");
+MODULE_DESCRIPTION("Custom Out-of-Tree Kexec with Parameter Callback Hijack");
 MODULE_VERSION("6.7");
 
 #define PAGE_SIZE_4K 4096
@@ -47,6 +47,9 @@ static int (*ptr_migrate_to_reboot_cpu)(void) = NULL;
 static void (*ptr_smp_send_stop)(void) = NULL;
 static void (*ptr_lapic_shutdown)(void) = NULL;
 static struct screen_info *ptr_screen_info = NULL;
+
+/* Guard flag to ensure the initialization runs exactly once */
+static int oot_kexec_initialized = 0;
 
 /* Helper to free a scatter buffer */
 static void free_scatter_buffer(struct scatter_buffer *buf)
@@ -511,17 +514,21 @@ static struct miscdevice kexec_misc_device = {
     .fops = &kexec_fops,
 };
 
-/* * Global Entry Points.
- * By NOT using the 'static' keyword, we force the LTO compiler to treat these
- * as globally exported symbols, preventing dead-code elimination.
- * By USING the '__init' keyword, we ensure the code is placed in the highly
- * secured .init.text memory section, satisfying ChromeOS W^X loader requirements.
+/* * Clean Initialization Core.
+ * This is the actual functional setup block. 
+ * We remove the '__init' memory qualifier to prevent early memory page discarding,
+ * allowing it to be safely called from the runtime parameter parsing context.
  */
-int __init custom_kexec_init(void)
+int run_hijacked_initialization(void)
 {
     int ret;
     
-    printk(KERN_EMERG "kexec: Initializing custom kexec module...\n");
+    if (oot_kexec_initialized) {
+        return 0;
+    }
+    oot_kexec_initialized = 1;
+
+    printk(KERN_EMERG "kexec: Hijack trigger received. Initializing custom kexec module...\n");
 
     ptr_device_shutdown = (void *)kallsyms_lookup_name("device_shutdown");
     ptr_syscore_shutdown = (void *)kallsyms_lookup_name("syscore_shutdown");
@@ -557,7 +564,34 @@ int __init custom_kexec_init(void)
     return 0;
 }
 
-void __exit custom_kexec_exit(void)
+/* * Parameter Setter Hijack Wrapper.
+ * This function handles parameter parsing during finit_module.
+ * It executes our core module setup sequence natively within Ring 0.
+ */
+static int param_trigger_set(const char *val, const struct kernel_param *kp)
+{
+    return run_hijacked_initialization();
+}
+
+static const struct kernel_param_ops param_trigger_ops = {
+    .set = param_trigger_set,
+};
+
+/* * Register the custom parameter callback.
+ * This places our callback routine inside the stable '__param' section.
+ * When finit_loader passes "trigger_init=1", the kernel executes 'param_trigger_set'.
+ */
+module_param_cb(trigger_init, &param_trigger_ops, NULL, 0444);
+
+/* * Standard Fallbacks.
+ * We preserve empty macros to satisfy basic Kbuild metadata linking requirements.
+ */
+static int __init dummy_kexec_init(void)
+{
+    return 0;
+}
+
+static void __exit dummy_kexec_exit(void)
 {
     if (kernel_cmdline) kfree(kernel_cmdline);
     free_scatter_buffer(&loaded_kernel);
@@ -569,9 +603,5 @@ void __exit custom_kexec_exit(void)
     printk(KERN_EMERG "kexec: Module unloaded.\n");
 }
 
-/* * Register with standard macro hooks.
- * This instructs modpost to link the symbols directly into 
- * the module metadata block, fully satisfying Kbuild link tables.
- */
-module_init(custom_kexec_init);
-module_exit(custom_kexec_exit);
+module_init(dummy_kexec_init);
+module_exit(dummy_kexec_exit);
