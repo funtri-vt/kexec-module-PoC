@@ -516,7 +516,10 @@ static struct miscdevice kexec_misc_device = {
  * Link-Time Optimization (LTO) or Dead-Code Elimination (DCE) from stripping
  * the function body during Stage-1 compilation.
  */
-int __attribute__((used)) __attribute__((noinline)) custom_module_wrapper_init(void)
+int custom_module_wrapper_init(void) __attribute__((used, noinline));
+void custom_module_wrapper_exit(void) __attribute__((used, noinline));
+
+int custom_module_wrapper_init(void)
 {
     int ret;
     
@@ -556,7 +559,7 @@ int __attribute__((used)) __attribute__((noinline)) custom_module_wrapper_init(v
     return 0;
 }
 
-void __attribute__((used)) __attribute__((noinline)) custom_module_wrapper_exit(void)
+void custom_module_wrapper_exit(void)
 {
     if (kernel_cmdline) kfree(kernel_cmdline);
     free_scatter_buffer(&loaded_kernel);
