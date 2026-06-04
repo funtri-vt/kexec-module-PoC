@@ -22,7 +22,6 @@ echo ""
 # ==============================================================================
 # CONFIGURATION VARIABLES (Edit these to customize your build sources)
 # ==============================================================================
-BOARD="grunt"
 SHIM_IMG_PATH="$WORKSPACE/shimboot_$BOARD.bin" # The RMA shim file to analyze and inject
 
 CHROMEOS_KERNEL_REPO="https://chromium.googlesource.com/chromiumos/third_party/kernel"
