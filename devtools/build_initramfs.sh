@@ -115,20 +115,27 @@ echo "[*] Generating blind automated /init script..."
 cat << 'EOF' > "$INTERMEDIATE_BUILD_DIR/init"
 #!/bin/sh
 
-# Mount minimal filesystems FIRST so we have device nodes to write to
-mkdir -p /proc /sys /dev /mnt
+# 1. Mount the core virtual filesystems so we can see hardware
 mount -t proc none /proc
 mount -t sysfs none /sys
 mount -t devtmpfs none /dev
 
-# Mount your USB drive (or wherever you are booting from, e.g., sda4)
+# 2. Wait for the block subsystem to probe USB/SATA drives!
+sleep 5
+
+# 3. Create mount point and mount the drive
+mkdir -p /mnt
 mount -t ext4 /dev/sda4 /mnt
 
-# Write a proof of life file
+# 4. WRITE THE PROOF
 echo "THE KEXEC PIVOT SURVIVED!" > /mnt/KEXEC_SUCCESS.txt
 sync
 
-# Force a hardware reboot
+# 5. Wait a second to ensure the write flushes to the physical USB drive
+sleep 2
+
+# 6. Enable SysRq and trigger an immediate hardware reboot
+echo 1 > /proc/sys/kernel/sysrq
 echo b > /proc/sysrq-trigger
 # Now route everything to the kernel log so we can actually see it!
 exec >/dev/kmsg 2>&1
