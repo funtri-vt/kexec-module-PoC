@@ -443,6 +443,8 @@ static void execute_trampoline(void)
      * visible before the identity jump happens. If the screen hangs on the line above
      * and THEN reboots, the copy phase succeeded and the target kernel is crashing.
      */
+    unsigned long long delay_counter;
+
     for (delay_counter = 0; delay_counter < 3000000000ULL; delay_counter++) {
         asm volatile("nop\n\t");
     }
