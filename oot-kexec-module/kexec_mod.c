@@ -36,6 +36,13 @@ struct trampoline_control {
     uint64_t zero_page_phys;
 };
 
+/* E820 memory segment descriptor format */
+struct e820_entry {
+    uint64_t addr;
+    uint64_t size;
+    uint32_t type;
+} __attribute__((packed));
+
 /* Declare the labels compiled inside our global assembly block */
 extern char trampoline_start[];
 extern char trampoline_end[];
@@ -286,30 +293,67 @@ static int setup_zero_page(void)
 static void execute_trampoline(void)
 {
     unsigned char *dest;
-    size_t i;
+    size_t i, j;
     unsigned long low_page_virt;
     unsigned long low_page_phys;
     unsigned long cr3_phys, cr4_val;
-    unsigned long *pgd, *pud, *pmd;
+    unsigned long *pgd, *pud;
     unsigned long *p4d = NULL;
     size_t bytes_to_copy, src_offset;
     size_t trampoline_size;
     struct trampoline_control *ctrl;
     unsigned long jump_target;
 
-    /* --- PHASE 1: SAFE ALLOCATIONS & STUB BUILDING (Interrupts ON, Scheduling Active) ---
-     * BARE-METAL UPGRADE: Force low_page_virt allocation to use GFP_DMA32, capping its absolute
-     * address boundary to the 32-bit (4GB) physical ceiling.
+    /* --- ADVANCED DYNAMIC MEMORY CALCULATOR ---
+     * Scan the active system's E820 tables to calculate the highest usable memory address.
+     * This dynamically configures our translation page directories without allocating unneeded pages.
      */
+    uint64_t max_physical_ram = 0x100000000ULL; /* Default fallback: 4 GB */
+    void *host_boot_params = (void *)kallsyms_lookup_name("boot_params");
+    if (host_boot_params) {
+        uint8_t entries = *(uint8_t *)((unsigned char *)host_boot_params + 0x1e8);
+        struct e820_entry *table = (struct e820_entry *)((unsigned char *)host_boot_params + 0x2d0);
+        uint64_t highest_ram_found = 0;
+        
+        for (i = 0; i < entries; i++) {
+            if (table[i].type == 1) { /* E820_TYPE_RAM */
+                uint64_t segment_ceiling = table[i].addr + table[i].size;
+                if (segment_ceiling > highest_ram_found) {
+                    highest_ram_found = segment_ceiling;
+                }
+            }
+        }
+        if (highest_ram_found > 0) {
+            max_physical_ram = highest_ram_found;
+            printk(KERN_EMERG "kexec: Detected system physical RAM ceiling at: %llu MB\n", max_physical_ram >> 20);
+        }
+    }
+
+    /* Calculate necessary PMD directories. (Each PMD page maps 1 GB of memory space) */
+    size_t num_pmds = (max_physical_ram + 0x3fffffffULL) >> 30;
+    if (num_pmds == 0) num_pmds = 1;
+    if (num_pmds > 32) num_pmds = 32; /* Upper safety limit: Cap allocations at 32 GB */
+
+    /* Allocate the variable length array on kernel heap */
+    unsigned long **pmds = kmalloc_array(num_pmds, sizeof(unsigned long *), GFP_KERNEL | __GFP_ZERO);
+    if (!pmds) {
+        printk(KERN_EMERG "kexec: Failed to allocate PMD pointer tracker array!\n");
+        return;
+    }
+
+    /* --- PHASE 1: SAFE ALLOCATIONS & STUB BUILDING (Interrupts ON, Scheduling Active) --- */
     low_page_virt = __get_free_page(GFP_DMA32 | __GFP_ZERO);
     if (!low_page_virt) {
         printk(KERN_EMERG "kexec: Failed to allocate transition page!\n");
+        kfree(pmds);
         return;
     }
     low_page_phys = virt_to_phys((void *)low_page_virt);
 
     pud = (unsigned long *)__get_free_page(GFP_KERNEL | __GFP_ZERO);
-    pmd = (unsigned long *)__get_free_page(GFP_KERNEL | __GFP_ZERO);
+    for (i = 0; i < num_pmds; i++) {
+        pmds[i] = (unsigned long *)__get_free_page(GFP_KERNEL | __GFP_ZERO);
+    }
     
     asm volatile("mov %%cr3, %0" : "=r" (cr3_phys));
     asm volatile("mov %%cr4, %0" : "=r" (cr4_val));
@@ -318,31 +362,36 @@ static void execute_trampoline(void)
     /* Pre-allocate a 5-level paging transition page if 5-level paging (LA57) is enabled */
     if (cr4_val & (1 << 12)) { 
         p4d = (unsigned long *)__get_free_page(GFP_KERNEL | __GFP_ZERO);
-        if (!p4d) {
-            printk(KERN_EMERG "kexec: Failed to allocate 5-level paging page!\n");
-            free_page(low_page_virt);
-            free_page((unsigned long)pud);
-            free_page((unsigned long)pmd);
-            return;
-        }
     }
 
-    if (!pud || !pmd) {
+    /* Verify all translation page table page allocations succeeded */
+    bool alloc_failed = (!pud || ((cr4_val & (1 << 12)) && !p4d));
+    for (i = 0; i < num_pmds; i++) {
+        if (!pmds[i]) alloc_failed = true;
+    }
+
+    if (alloc_failed) {
         printk(KERN_EMERG "kexec: Failed to allocate transition page-table nodes!\n");
         if (low_page_virt) free_page(low_page_virt);
         if (pud) free_page((unsigned long)pud);
-        if (pmd) free_page((unsigned long)pmd);
+        for (i = 0; i < num_pmds; i++) {
+            if (pmds[i]) free_page((unsigned long)pmds[i]);
+        }
         if (p4d) free_page((unsigned long)p4d);
+        kfree(pmds);
         return;
     }
 
-    /* Create 128 huge page entries of 2MB each inside our PMD.
-     * This expands our identity map limit to 256MB, ensuring the 128MB initrd dest is safely mapped.
+    /* BARE-METAL IDENTITY-MAP UPGRADE:
+     * Populate only the exact number of required PMD tables dynamically.
+     * Maps each segment cleanly up to the system memory ceiling!
      */
-    for (i = 0; i < 128; i++) {
-        pmd[i] = (i * 0x200000) | 0x83; /* Present, Read/Write, HugePage */
+    for (i = 0; i < num_pmds; i++) {
+        for (j = 0; j < 512; j++) {
+            pmds[i][j] = ((i * 0x40000000ULL) + (j * 0x200000ULL)) | 0x83; /* Present, Read/Write, HugePage */
+        }
+        pud[i] = virt_to_phys(pmds[i]) | 0x3; /* Present, Read/Write */
     }
-    pud[0] = virt_to_phys(pmd) | 0x3;
 
     /* Populate the trampoline control block parameters (placed at the start of low_page_virt) */
     ctrl = (struct trampoline_control *)low_page_virt;
@@ -433,6 +482,9 @@ static void execute_trampoline(void)
 
     /* Blastoff with mandatory hardware cache flush so our physical writes hit main RAM */
     asm volatile("wbinvd\n\t");
+
+    /* Release our temporary C PMD tracking array cleanly now that the page tables are loaded */
+    kfree(pmds);
 
     /* CRITICAL FIX: Pass low_page_phys in %rdi and zero_page_phys in %rsi. 
      * This bypasses RIP-relative calculation discrepancies entirely!
