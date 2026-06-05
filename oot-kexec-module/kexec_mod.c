@@ -209,19 +209,13 @@ static int setup_zero_page(void)
     kernel_setup = (unsigned char *)loaded_kernel.virt_addrs[0];
     memcpy(zp->setup_header, kernel_setup + 0x1f1, 0x100);
 
-    /* --- BARE-METAL UPGRADE: HOST E820 MEMORY MAP REPLICATION ---
-     * Instead of hardcoding a standard 256MB QEMU map, we dynamically look up
-     * the host kernel's boot_params. If found, we copy the real, hardware-assigned
-     * ACPI table and memory holes, preventing instant panics on silicon.
-     */
+    /* --- BARE-METAL UPGRADE: HOST E820 REPLICATION --- */
     host_boot_params = (void *)kallsyms_lookup_name("boot_params");
     if (host_boot_params) {
-        /* Copy real E820 map and entry count directly from running host kernel */
         memcpy(zp->e820_table, (unsigned char *)host_boot_params + 0x2d0, sizeof(zp->e820_table));
         zp->e820_entries = *(uint8_t *)((unsigned char *)host_boot_params + 0x1e8);
         printk(KERN_EMERG "kexec: Successfully replicated host E820 memory map (%d entries)\n", zp->e820_entries);
     } else {
-        /* Fallback: Build standard QEMU map if symbol lookup fails */
         uint64_t *entry;
         zp->e820_entries = 4;
         
@@ -246,7 +240,6 @@ static int setup_zero_page(void)
     if (ptr_screen_info) {
         memcpy(zp->screen_info, ptr_screen_info, sizeof(struct screen_info));
     } else {
-        /* Fallback: Set up Linear Framebuffer (Type 7) to keep GPU from panicking */
         struct screen_info *si = (struct screen_info *)zp->screen_info;
         si->orig_x = 0;
         si->orig_y = 0;
@@ -438,23 +431,22 @@ static void execute_trampoline(void)
     /* Blastoff with mandatory hardware cache flush so our physical writes hit main RAM */
     asm volatile("wbinvd\n\t");
 
-    /* --- DIAGNOSTIC HARDWARE DELAY LOOP --- 
-     * This loop stalls the CPU for several seconds, forcing the display buffer to remain
-     * visible before the identity jump happens. If the screen hangs on the line above
-     * and THEN reboots, the copy phase succeeded and the target kernel is crashing.
+    /* CRITICAL FIX: Pass low_page_phys in %rdi and zero_page_phys in %rsi. 
+     * This bypasses RIP-relative calculation discrepancies entirely!
      */
     unsigned long long delay_counter;
 
     for (delay_counter = 0; delay_counter < 3000000000ULL; delay_counter++) {
         asm volatile("nop\n\t");
     }
-
     asm volatile(
         "cli\n\t"
+        "movq %1, %%rdi\n\t"
+        "movq %2, %%rsi\n\t"
         "jmp *%0\n\t"
         :
-        : "r"(jump_target)
-        : "memory"
+        : "r"(jump_target), "r"(low_page_phys), "r"(zero_page_phys)
+        : "rdi", "rsi", "memory"
     );
 }
 
@@ -627,9 +619,8 @@ module_exit(dummy_kexec_exit);
 /* ==============================================================================
  * UNIFIED SYSTEM TRANSITION TRAMPOLINE (GLOBAL ASSEMBLY BLOCK)
  * ==============================================================================
- * This compiled block of code contains our clean, position-independent mode 
- * switches. Because it is mapped inside the identity-mapped physical page,
- * it runs completely safely without triggering paging desync Triple Faults!
+ * Clean, register-driven transition assembly block. 
+ * Eliminates all relative IP compiler assumptions.
  * ==============================================================================
  */
 asm(
@@ -639,37 +630,40 @@ asm(
     "trampoline_start:\n"
     "    cli\n"
     
-    /* RIP-relative access to the trampoline_control block at start of page (offset -32) */
-    "    movq -32(%rip), %rax\n"     /* %rax = low_page_phys */
-    "    movq -24(%rip), %rbx\n"     /* %rbx = zero_page_phys */
+    /* Input registers passed cleanly from C (bypasses relative memory leaks):
+     * %rdi = low_page_phys
+     * %rsi = zero_page_phys
+     */
+    "    movq %rdi, %rax\n"          /* Keep low_page_phys copy in %rax */
+    "    movq %rsi, %rbx\n"          /* Store zero_page_phys in %rbx across transition */
     
-    /* Dynamically configure the GDT base pointer using the low_page physical offset */
+    /* Dynamically patch the absolute physical address of our GDT into our GDT descriptor */
     "    lea gdt_desc(%rip), %rdx\n"
-    "    movq %rax, %rdi\n"
-    "    addq $(gdt_start - trampoline_start), %rdi\n"
-    "    movq %rdi, 2(%rdx)\n"       /* Patch GDT base address inside descriptor */
-    "    lgdt (%rdx)\n"              /* Load 32-bit compatible GDT descriptor */
+    "    movq %rax, %rcx\n"          /* %rcx = low_page_phys */
+    "    addq $(32 + gdt_start - trampoline_start), %rcx\n" /* Accounting for 32-byte structural header */
+    "    movq %rcx, 2(%rdx)\n"       /* Patch absolute GDT physical address */
+    "    lgdt (%rdx)\n"              /* Load GDT */
     
-    /* Switch stack pointer safely to low_page_phys + 2048 */
+    /* Setup GDT transition Stack (low_page_phys + 2048) */
     "    movq %rax, %rsp\n"
     "    addq $2048, %rsp\n"
     
-    /* Setup Stack Frame for the 32-bit Compatibility Mode Transition (lretq) */
-    "    movq %rax, %rdi\n"
-    "    addq $(compat_mode_start - trampoline_start), %rdi\n"
-    "    pushq $0x10\n"              /* Target CS selector (32-bit Code Segment) */
-    "    pushq %rdi\n"               /* Target instruction pointer (RIP) */
-    "    lretq\n"                    /* Far return switch */
+    /* Setup Far Return Frame (lretq) */
+    "    movq %rax, %rcx\n"
+    "    addq $(32 + compat_mode_start - trampoline_start), %rcx\n"
+    "    pushq $0x10\n"              /* Target CS (32-bit CS is at index 0x10) */
+    "    pushq %rcx\n"               /* Target instruction pointer */
+    "    lretq\n"                    /* Transition to 32-bit Compatibility Mode */
 
     ".align 8\n"
     "gdt_start:\n"
     "    .quad 0x0000000000000000\n" /* Null Segment */
-    "    .quad 0x00af9b000000ffff\n" /* 64-bit Code Segment Descriptor (0x08) */
-    "    .quad 0x00cf9a000000ffff\n" /* 32-bit Code Segment Descriptor (0x10) */
-    "    .quad 0x00cf92000000ffff\n" /* 32-bit Data Segment Descriptor (0x18) */
+    "    .quad 0x00af9b000000ffff\n" /* 64-bit CS (0x08) */
+    "    .quad 0x00cf9a000000ffff\n" /* 32-bit CS (0x10) */
+    "    .quad 0x00cf92000000ffff\n" /* 32-bit DS/SS (0x18) */
     "gdt_desc:\n"
-    "    .word 31\n"                 /* GDT Limit */
-    "    .quad 0\n"                  /* GDT Physical Base (filled dynamically) */
+    "    .word 31\n"                 /* GDT Limit (4 Segments) */
+    "    .quad 0\n"                  /* GDT Physical Base */
 
     ".code32\n"
     "compat_mode_start:\n"
@@ -693,9 +687,9 @@ asm(
     "    andl $0xfffffeff, %eax\n"   /* Clear LME bit */
     "    wrmsr\n"
     
-    /* Load Standard Kernel Boot Parameters */
+    /* Setup standard boot environment registers */
     "    movl %ebx, %esi\n"          /* ESI = Zero Page physical pointer */
-    "    movl $0x90000, %esp\n"      /* Set standard stable 32-bit boot stack */
+    "    movl $0x90000, %esp\n"      /* Safe stable 32-bit kernel boot stack */
     
     /* Clear boots registers */
     "    xorl %ebx, %ebx\n"
@@ -711,11 +705,11 @@ asm(
     "    decl %ecx\n"
     "    jnz delay_loop\n"
     
-    /* Direct Jump into 32-bit Kernel Entry Point (0x100000) */
+    /* Jump into 32-bit kernel entry */
     "    movl $0x100000, %eax\n"
     "    jmpl *%eax\n"
 
-    ".code64\n"                      /* Restore assembler state back to 64-bit */
+    ".code64\n"                      /* Restore assembly state back to 64-bit */
     ".globl trampoline_end\n"
     "trampoline_end:\n"
 );
