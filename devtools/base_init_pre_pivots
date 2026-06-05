@@ -7,7 +7,7 @@ mount -t sysfs none /sys
 
 # devtmpfs might fail if the locked-down host kernel lacks support, 
 # but we ignore the error because we will manually create our node anyway!
-mount -t devtmpfs none /dev 2>/dev/null || true
+mount -t devtmpfs none /dev
 
 # --- DYNAMIC TTY DETECTION ---
 # Ask the host kernel what console is actively being used by the hardware
@@ -25,71 +25,71 @@ else
     TARGET_CONSOLE_ARG="target_console=$ACTIVE_TTY"
 fi
 
-echo "[*] Loading kexec module (Detected Hardware Console: $ACTIVE_TTY)..." > /dev/kmsg
+echo "[*] Loading kexec module (Detected Hardware Console: $ACTIVE_TTY)..." > /dev/$ACTIVE_TTY
 
 # DYNAMIC VERIFICATION: Hash of the file physically present in the running initramfs
-echo "==========================================================" > /dev/kmsg
-echo " [*] DYNAMIC VERIFICATION: ACTIVE RAMDISK FILE HASH" > /dev/kmsg
-echo "==========================================================" > /dev/kmsg
-sha256sum /lib/kexec_mod.ko > /dev/kmsg 2>&1
-echo "==========================================================" > /dev/kmsg
+echo "==========================================================" > /dev/$ACTIVE_TTY
+echo " [*] DYNAMIC VERIFICATION: ACTIVE RAMDISK FILE HASH" > /dev/$ACTIVE_TTY
+echo "==========================================================" > /dev/$ACTIVE_TTY
+sha256sum /lib/kexec_mod.ko > /dev/$ACTIVE_TTY 2>&1
+echo "==========================================================" > /dev/$ACTIVE_TTY
 
 # Redirect all loader output (stdout and stderr) to the kernel log
-/bin/finit_loader /lib/kexec_mod.ko > /dev/kmsg 2>&1
+/bin/finit_loader /lib/kexec_mod.ko > /dev/$ACTIVE_TTY 2>&1
 LOAD_RET=$?
-echo "[*] finit_loader exit code: $LOAD_RET" > /dev/kmsg
+echo "[*] finit_loader exit code: $LOAD_RET" > /dev/$ACTIVE_TTY
 
-echo "[*] Extracting hidden kernel logs (dmesg):" > /dev/kmsg
+echo "[*] Extracting hidden kernel logs (dmesg):" > /dev/$ACTIVE_TTY
 dmesg | grep kexec > /dev/kmsg
 
 echo "[*] Checking /proc/modules to verify memory residency:" > /dev/kmsg
 grep kexec /proc/modules > /dev/kmsg || echo "[-] Module NOT found in /proc/modules!" > /dev/kmsg
 
-echo "[*] Dumping ENTIRE /proc/misc to kernel log:" > /dev/kmsg
-cat /proc/misc > /dev/kmsg
+#echo "[*] Dumping ENTIRE /proc/misc to kernel log:" > /dev/kmsg
+#cat /proc/misc > /dev/kmsg
 
 # --- FORENSIC EXTRACTION OF THE HOST .CONFIG ---
-echo "[*] Attempting runtime extraction of embedded kernel config..." > /dev/kmsg
-if [ -f "/proc/config.gz" ]; then
-    zcat /proc/config.gz > /dev/kmsg 2>&1
-else
-    # Find Partition 2 coordinates dynamically to extract the original running config
-    echo "  [*] Extracting Kern-A partition to find embedded .config..." > /dev/kmsg
-    # Locate our primary loop device block
-    LOOP_DEV=$(mount | grep 'on / ' | grep -o 'loop[0-9]\+')
-    if [ -z "$LOOP_DEV" ]; then
-        LOOP_DEV=$(ls /dev/loop* | head -n 1 | xargs basename)
-    fi
+# echo "[*] Attempting runtime extraction of embedded kernel config..." > /dev/kmsg
+# if [ -f "/proc/config.gz" ]; then
+#     zcat /proc/config.gz > /dev/kmsg 2>&1
+# else
+#     # Find Partition 2 coordinates dynamically to extract the original running config
+#     echo "  [*] Extracting Kern-A partition to find embedded .config..." > /dev/kmsg
+#     # Locate our primary loop device block
+#     LOOP_DEV=$(mount | grep 'on / ' | grep -o 'loop[0-9]\+')
+#     if [ -z "$LOOP_DEV" ]; then
+#         LOOP_DEV=$(ls /dev/loop* | head -n 1 | xargs basename)
+#     fi
     
-    # We find Partition 2 inside our mapped loop device context
-    TARGET_PART="/dev/${LOOP_DEV}p2"
-    if [ -b "$TARGET_PART" ]; then
-        dd if="$TARGET_PART" of=/tmp/kern_a.bin bs=512 count=32768 status=none 2>/dev/null || true
-        # Cleanly extract config blocks using embedded strings
-        echo "  [*] Parsing kern_a blocks for IKCONFIG magic headers..." > /dev/kmsg
-        # IKCONFIG records start with "IKCFG_ST" and end with "IKCFG_ED"
-        if grep -a -b -o "IKCFG_ST" /tmp/kern_a.bin > /tmp/cfg_start.txt 2>/dev/null; then
-            CFG_START=$(head -n 1 /tmp/cfg_start.txt | cut -d: -f1)
-            # Offset of 8 bytes to skip the "IKCFG_ST" magic bytes
-            REAL_START=$((CFG_START + 8))
-            tail -c +$REAL_START /tmp/kern_a.bin | gzip -d > /dev/kmsg 2>/dev/null || echo "[-] Failed to decompress IKCONFIG block." > /dev/kmsg
-        else
-            echo "[-] Host kernel lacks statically embedded CONFIG_IKCONFIG payload." > /dev/kmsg
-        fi
-        rm -f /tmp/kern_a.bin /tmp/cfg_start.txt
-    else
-        echo "[-] Partition 2 block device not found. Cannot extract static config." > /dev/kmsg
-    fi
-fi
+#     # We find Partition 2 inside our mapped loop device context
+#     TARGET_PART="/dev/${LOOP_DEV}p2"
+#     if [ -b "$TARGET_PART" ]; then
+#         dd if="$TARGET_PART" of=/tmp/kern_a.bin bs=512 count=32768 status=none 2>/dev/null || true
+#         # Cleanly extract config blocks using embedded strings
+#         echo "  [*] Parsing kern_a blocks for IKCONFIG magic headers..." > /dev/kmsg
+#         # IKCONFIG records start with "IKCFG_ST" and end with "IKCFG_ED"
+#         if grep -a -b -o "IKCFG_ST" /tmp/kern_a.bin > /tmp/cfg_start.txt 2>/dev/null; then
+#             CFG_START=$(head -n 1 /tmp/cfg_start.txt | cut -d: -f1)
+#             # Offset of 8 bytes to skip the "IKCFG_ST" magic bytes
+#             REAL_START=$((CFG_START + 8))
+#             tail -c +$REAL_START /tmp/kern_a.bin | gzip -d > /dev/kmsg 2>/dev/null || echo "[-] Failed to decompress IKCONFIG block." > /dev/kmsg
+#         else
+#             echo "[-] Host kernel lacks statically embedded CONFIG_IKCONFIG payload." > /dev/kmsg
+#         fi
+#         rm -f /tmp/kern_a.bin /tmp/cfg_start.txt
+#     else
+#         echo "[-] Partition 2 block device not found. Cannot extract static config." > /dev/kmsg
+#     fi
+# fi
 
 # --- PROBE DYNAMIC SYMBOLS ---
 echo "[*] Checking kexec symbols in the running kernel..." > /dev/kmsg
-grep -i kexec_mod /proc/kallsyms > /dev/kmsg || echo "[-] No kexec_mod symbols found in kallsyms!" > /dev/kmsg
+grep -i kexec_mod /proc/kallsyms > /dev/$ACTIVE_TTY || echo "[-] No kexec_mod symbols found in kallsyms!" > /dev/$ACTIVE_TTY
 
-echo "[*] Checking if misc_register symbol is present in the host kernel..." > /dev/kmsg
-grep -w misc_register /proc/kallsyms > /dev/kmsg || echo "[-] misc_register symbol is MISSING from this kernel!" > /dev/kmsg
+echo "[*] Checking if misc_register symbol is present in the host kernel..." > /dev/$ACTIVE_TTY
+grep -w misc_register /proc/kallsyms > /dev/$ACTIVE_TTY || echo "[-] misc_register symbol is MISSING from this kernel!" > /dev/$ACTIVE_TTY
 
-echo "[*] Finding dynamic minor number..." > /dev/kmsg
+echo "[*] Finding dynamic minor number..." > /dev/$ACTIVE_TTY
 
 # Try procfs first
 MINOR=$(grep custom_kexec /proc/misc | awk '{print $1}')
@@ -97,27 +97,27 @@ MINOR=$(grep custom_kexec /proc/misc | awk '{print $1}')
 # Try sysfs fallback
 if [ -z "$MINOR" ] && [ -f "/sys/class/misc/custom_kexec/dev" ]; then
     MINOR=$(cat /sys/class/misc/custom_kexec/dev | cut -d: -f2)
-    echo "[+] Discovered minor via sysfs: $MINOR" > /dev/kmsg
+    echo "[+] Discovered minor via sysfs: $MINOR" > /dev/$ACTIVE_TTY
 fi
 
 if [ -z "$MINOR" ]; then
-    echo "[-] CRITICAL ERROR: custom_kexec not registered in misc framework!" > /dev/kmsg
-    echo "[-] Module likely failed to initialize or aborted early. Check dmesg output above." > /dev/kmsg
+    echo "[-] CRITICAL ERROR: custom_kexec not registered in misc framework!" > /dev/$ACTIVE_TTY
+    echo "[-] Module likely failed to initialize or aborted early. Check dmesg output above." > /dev/$ACTIVE_TTY
     while true; do sleep 1; done
 fi
 
-echo "[+] Found custom_kexec at minor number: $MINOR" > /dev/kmsg
-echo "[*] Manually creating /dev/custom_kexec node..." > /dev/kmsg
+echo "[+] Found custom_kexec at minor number: $MINOR" > /dev/$ACTIVE_TTY
+echo "[*] Manually creating /dev/custom_kexec node..." > /dev/$ACTIVE_TTY
 
 # All misc devices use Major number 10. We use the extracted dynamic Minor number.
 mknod /dev/custom_kexec c 10 $MINOR
 
-echo "[*] Node created successfully. Triggering pivot..." > /dev/kmsg
+echo "[*] Node created successfully. Triggering pivot..." > /dev/$ACTIVE_TTY
 
 # Execute the usermode loader with dynamic console, pushing all output to the kernel log
-/bin/custom_kexec --console "$TARGET_CONSOLE_ARG" > /dev/kmsg 2>&1
+/bin/custom_kexec --console "$TARGET_CONSOLE_ARG" > /dev/$ACTIVE_TTY 2>&1
 EXEC_RET=$?
 
 # If custom_kexec fails or returns, catch it so PID 1 doesn't panic silently
-echo "[-] ERROR: custom_kexec terminated unexpectedly with code: $EXEC_RET" > /dev/kmsg
+echo "[-] ERROR: custom_kexec terminated unexpectedly with code: $EXEC_RET" > /dev/$ACTIVE_TTY
 while true; do sleep 1; done
