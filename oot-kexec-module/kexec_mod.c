@@ -504,7 +504,7 @@ static long kexec_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
             if (ptr_migrate_to_reboot_cpu) ptr_migrate_to_reboot_cpu();
             
             /* DIAGNOSTIC: Temporarily disabled device_shutdown to keep display registers mapped */
-            /* if (ptr_device_shutdown) ptr_device_shutdown(); */
+            if (ptr_device_shutdown) ptr_device_shutdown();
             
             if (ptr_smp_send_stop) ptr_smp_send_stop();
             if (ptr_syscore_shutdown) ptr_syscore_shutdown();
