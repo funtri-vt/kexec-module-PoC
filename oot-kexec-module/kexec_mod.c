@@ -18,7 +18,7 @@
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("funtri-vt");
 MODULE_DESCRIPTION("Custom Out-of-Tree Kexec with Parameter Callback Hijack");
-MODULE_VERSION("6.7");
+MODULE_VERSION("7.0");
 
 #define PAGE_SIZE_4K 4096
 
@@ -29,6 +29,16 @@ struct scatter_buffer {
     size_t nr_pages;          /* Total number of pages allocated */
     size_t size;              /* Total size of payload in bytes */
 };
+
+/* Struct used to pass configuration data safely to the assembly trampoline */
+struct trampoline_control {
+    uint64_t low_page_phys;
+    uint64_t zero_page_phys;
+};
+
+/* Declare the labels compiled inside our global assembly block */
+extern char trampoline_start[];
+extern char trampoline_end[];
 
 static char *kernel_cmdline = NULL;
 static struct scatter_buffer loaded_kernel = {NULL, NULL, 0, 0};
@@ -168,97 +178,117 @@ static int load_user_to_scatter_buffer(struct scatter_buffer *buf, const void __
     return 0;
 }
 
+/* Struct representing boot parameter segments (Zero Page) */
+struct real_boot_params {
+    uint8_t reserved1[0x1e8];
+    uint8_t e820_entries;          /* Offset 0x1e8 */
+    uint8_t reserved2[0x8];
+    uint32_t ext_ramdisk_image;    /* Offset 0x0c0 (64-bit support) */
+    uint32_t ext_ramdisk_size;     /* Offset 0x0c4 (64-bit support) */
+    uint8_t reserved3[0x14];
+    uint8_t screen_info[0x40];     /* Offset 0x000 (VGA/Framebuffers) */
+    uint8_t reserved4[0xb8];
+    uint8_t setup_header[0x100];   /* Offset 0x1f1 */
+    uint8_t reserved5[0x10];
+    uint32_t cmd_line_ptr;         /* Offset 0x228 */
+    uint8_t reserved6[0xa4];
+    uint8_t e820_table[112 * 20];  /* Offset 0x2d0 (Up to 112 memory segments) */
+} __attribute__((packed));
+
 static int setup_zero_page(void)
 {
-    unsigned char *zp = (unsigned char *)zero_page_virt;
+    struct real_boot_params *zp = (struct real_boot_params *)zero_page_virt;
     unsigned char *kernel_setup = NULL;
     unsigned char setup_sects;
+    void *host_boot_params = NULL;
 
     if (!loaded_kernel.virt_addrs || loaded_kernel.nr_pages == 0) return -EINVAL;
 
     memset(zp, 0, PAGE_SIZE_4K);
 
     kernel_setup = (unsigned char *)loaded_kernel.virt_addrs[0];
-    memcpy(zp, kernel_setup, 1024);
+    memcpy(zp->setup_header, kernel_setup + 0x1f1, 0x100);
 
-    /* Inject the active screen_info to prevent display corruption */
-    if (ptr_screen_info) {
-        memcpy(zp, ptr_screen_info, sizeof(struct screen_info));
+    /* --- BARE-METAL UPGRADE: HOST E820 MEMORY MAP REPLICATION ---
+     * Instead of hardcoding a standard 256MB QEMU map, we dynamically look up
+     * the host kernel's boot_params. If found, we copy the real, hardware-assigned
+     * ACPI table and memory holes, preventing instant panics on silicon.
+     */
+    host_boot_params = (void *)kallsyms_lookup_name("boot_params");
+    if (host_boot_params) {
+        /* Copy real E820 map and entry count directly from running host kernel */
+        memcpy(zp->e820_table, (unsigned char *)host_boot_params + 0x2d0, sizeof(zp->e820_table));
+        zp->e820_entries = *(uint8_t *)((unsigned char *)host_boot_params + 0x1e8);
+        printk(KERN_EMERG "kexec: Successfully replicated host E820 memory map (%d entries)\n", zp->e820_entries);
     } else {
-        /* Fallback: Hardcode generic 80x25 VGA Text Mode parameters */
-        struct screen_info *si = (struct screen_info *)zp;
-        si->orig_x = 0;
-        si->orig_y = 0;
-        si->orig_video_mode = 3;
-        si->orig_video_cols = 80;
-        si->orig_video_lines = 25;
-        si->orig_video_ega_bx = 3;
-        si->orig_video_isVGA = 1; /* 1 = Standard VGA Text Mode */
-        si->orig_video_points = 16;
+        /* Fallback: Build standard QEMU map if symbol lookup fails */
+        uint64_t *entry;
+        zp->e820_entries = 4;
+        
+        /* Entry 0: Usable Low RAM */
+        entry = (uint64_t *)(zp->e820_table);
+        entry[0] = 0x0ULL; entry[1] = 0x9FC00ULL; *((uint32_t *)(entry + 2)) = 1;
+
+        /* Entry 1: Reserved */
+        entry = (uint64_t *)(zp->e820_table + 20);
+        entry[0] = 0x9FC00ULL; entry[1] = 0x400ULL; *((uint32_t *)(entry + 2)) = 2;
+
+        /* Entry 2: Reserved */
+        entry = (uint64_t *)(zp->e820_table + 40);
+        entry[0] = 0xF0000ULL; entry[1] = 0x10000ULL; *((uint32_t *)(entry + 2)) = 2;
+
+        /* Entry 3: Usable High RAM */
+        entry = (uint64_t *)(zp->e820_table + 60);
+        entry[0] = 0x100000ULL; entry[1] = 0xFEE0000ULL; *((uint32_t *)(entry + 2)) = 1;
     }
 
-    if (zp[0x202] != 'H' || zp[0x203] != 'd' || zp[0x204] != 'r' || zp[0x205] != 'S') {
+    /* --- BARE-METAL UPGRADE: LINEAR FRAMEBUFFER DIAGNOSTICS --- */
+    if (ptr_screen_info) {
+        memcpy(zp->screen_info, ptr_screen_info, sizeof(struct screen_info));
+    } else {
+        /* Fallback: Set up Linear Framebuffer (Type 7) to keep GPU from panicking */
+        struct screen_info *si = (struct screen_info *)zp->screen_info;
+        si->orig_x = 0;
+        si->orig_y = 0;
+        si->orig_video_isVGA = 7; /* VIDEO_TYPE_VLFB / VESA Framebuffer */
+        si->orig_video_cols = 80;
+        si->orig_video_lines = 25;
+    }
+
+    if (zp->setup_header[0x11] != 'H' || zp->setup_header[0x12] != 'd' || 
+        zp->setup_header[0x13] != 'r' || zp->setup_header[0x14] != 'S') {
         printk(KERN_EMERG "kexec: Loaded bzImage does not contain a valid setup header signature!\n");
         return -EINVAL;
     }
 
     /* Calculate the exact byte offset where the 32-bit Protected Mode kernel starts */
-    setup_sects = zp[0x1F1];
+    setup_sects = zp->setup_header[0];
     if (setup_sects == 0) setup_sects = 4;
     kernel_pm_offset = (setup_sects + 1) * 512;
     printk(KERN_EMERG "kexec: Calculated protected-mode payload offset: %zu bytes\n", kernel_pm_offset);
 
-    /* CRITICAL 6.12 FIX: Provide a valid E820 Physical Memory Map.
-     * Modern kernels will instantly panic if e820_entries == 0.
-     * We hardcode a generic 256MB QEMU map based on standard PC architecture.
-     */
-    zp[0x1e8] = 4; /* Number of E820 entries */
-
-    /* Entry 0: 0x0 to 0x9FC00 (Usable Low RAM) */
-    *((__u64 *)(zp + 0x2d0)) = 0x0ULL;
-    *((__u64 *)(zp + 0x2d8)) = 0x9FC00ULL;
-    *((__u32 *)(zp + 0x2e0)) = 1;
-
-    /* Entry 1: 0x9FC00 to 0xA0000 (Reserved) */
-    *((__u64 *)(zp + 0x2d0 + 20)) = 0x9FC00ULL;
-    *((__u64 *)(zp + 0x2d8 + 20)) = 0x400ULL;
-    *((__u32 *)(zp + 0x2e0 + 20)) = 2;
-
-    /* Entry 2: 0xF0000 to 0x100000 (Reserved) */
-    *((__u64 *)(zp + 0x2d0 + 40)) = 0xF0000ULL;
-    *((__u64 *)(zp + 0x2d8 + 40)) = 0x10000ULL;
-    *((__u32 *)(zp + 0x2e0 + 40)) = 2;
-
-    /* Entry 3: 0x100000 to 0x10000000 (Usable High RAM - covers up to 256MB) */
-    *((__u64 *)(zp + 0x2d0 + 60)) = 0x100000ULL;
-    *((__u64 *)(zp + 0x2d8 + 60)) = 0xFEE0000ULL;
-    *((__u32 *)(zp + 0x2e0 + 60)) = 1;
-
-    zp[0x210] = 0xFF; /* Type of loader */
+    zp->setup_header[0x1F] = 0xFF; /* Type of loader */
     
     if (loaded_initrd.size > 0) {
-        /* Evacuate the initramfs to 128MB (0x8000000) to clear the giant 6.12 decompression path */
-        initrd_phys_dest = 0x8000000; 
-        *(uint32_t *)(zp + 0x218) = (uint32_t)initrd_phys_dest; 
-        *(uint32_t *)(zp + 0x21C) = (uint32_t)loaded_initrd.size;
+        initrd_phys_dest = 0x8000000; /* Safe high physical RAM destination */
+        *(uint32_t *)&(zp->setup_header[0x27]) = (uint32_t)initrd_phys_dest; 
+        *(uint32_t *)&(zp->setup_header[0x2B]) = (uint32_t)loaded_initrd.size;
 
-        /* CRITICAL 6.12 FIX: Modern 64-bit kernels combine this with ext_ramdisk_image 
-         * at offset 0x0C0 to support >4GB addresses. We MUST explicitly zero this out. */
-        *(uint32_t *)(zp + 0x0C0) = 0; /* ext_ramdisk_image */
-        *(uint32_t *)(zp + 0x0C4) = 0; /* ext_ramdisk_size */
+        zp->ext_ramdisk_image = 0;
+        zp->ext_ramdisk_size = 0;
 
         printk(KERN_EMERG "kexec: Configured target initrd at physical address: 0x%lx\n", initrd_phys_dest);
     }
 
     if (kernel_cmdline) {
-        *(uint32_t *)(zp + 0x228) = 0x10000;
+        zp->cmd_line_ptr = 0x10000;
     }
 
     return 0;
 }
 
 /* * The Ultimate Trampoline.
- * Separates allocations, hardware teardown, and safe atomic copying.
+ * This function performs allocations and safely delegates the teardown and jump steps.
  */
 static void execute_trampoline(void)
 {
@@ -270,18 +300,9 @@ static void execute_trampoline(void)
     unsigned long *pgd, *pud, *pmd;
     unsigned long *p4d = NULL;
     size_t bytes_to_copy, src_offset;
-    unsigned long *gdt;
-    unsigned short *gdt_limit;
-    unsigned long *gdt_base;
-    unsigned char *stub;
-    int offset = 0;
-    unsigned int gdt_desc_rel;
-    unsigned long safe_rsp;
-    unsigned int offset_32bit;
-    unsigned long *stack_frame;
-    unsigned int zp_phys;
-    unsigned int stable_boot_stack;
-    volatile unsigned long long delay_counter;
+    size_t trampoline_size;
+    struct trampoline_control *ctrl;
+    unsigned long jump_target;
 
     /* --- PHASE 1: SAFE ALLOCATIONS & STUB BUILDING (Interrupts ON, Scheduling Active) --- */
     low_page_virt = __get_free_page(GFP_KERNEL | GFP_DMA | __GFP_ZERO);
@@ -327,90 +348,14 @@ static void execute_trampoline(void)
     }
     pud[0] = virt_to_phys(pmd) | 0x3;
 
-    /* Build the 32-bit GDT - Declared C90 compliant at top of scope */
-    gdt = (unsigned long *)(low_page_virt + 2048);
-    gdt[0] = 0x0000000000000000ULL; /* Null */
-    gdt[1] = 0x00af9b000000ffffULL; /* 64-bit CS */
-    gdt[2] = 0x00cf9a000000ffffULL; /* 32-bit CS */
-    gdt[3] = 0x00cf92000000ffffULL; /* 32-bit DS */
+    /* Populate the trampoline control block parameters (placed at the start of low_page_virt) */
+    ctrl = (struct trampoline_control *)low_page_virt;
+    ctrl->low_page_phys = low_page_phys;
+    ctrl->zero_page_phys = zero_page_phys;
 
-    gdt_limit = (unsigned short *)(low_page_virt + 2032);
-    gdt_base = (unsigned long *)(low_page_virt + 2034);
-    *gdt_limit = 31;
-    *gdt_base = low_page_phys + 2048;
-
-    /* Assembling the Raw Machine Code */
-    stub = (unsigned char *)low_page_virt;
-
-    stub[offset++] = 0xfa; /* cli */
-
-    /* lgdt */
-    stub[offset++] = 0x0f; stub[offset++] = 0x01; stub[offset++] = 0x15;
-    gdt_desc_rel = 2032 - (offset + 4);
-    memcpy(&stub[offset], &gdt_desc_rel, 4); offset += 4;
-
-    /* Switch stack */
-    stub[offset++] = 0x48; stub[offset++] = 0xbc; /* mov rsp, imm64 */
-    safe_rsp = low_page_phys + 1024 - 16;
-    memcpy(&stub[offset], &safe_rsp, 8); offset += 8;
-
-    /* lretq */
-    stub[offset++] = 0x48; stub[offset++] = 0xcb;
-
-    /* Build the target Far Return stack frame */
-    offset_32bit = offset;
-    stack_frame = (unsigned long *)(low_page_virt + 1024 - 16);
-    stack_frame[0] = low_page_phys + offset_32bit; /* Target RIP */
-    stack_frame[1] = 0x10; /* Target CS */
-
-    /* mov eax, 0x18 */
-    stub[offset++] = 0xb8; stub[offset++] = 0x18; stub[offset++] = 0x00; stub[offset++] = 0x00; stub[offset++] = 0x00;
-    stub[offset++] = 0x8e; stub[offset++] = 0xd8; /* mov ds, eax */
-    stub[offset++] = 0x8e; stub[offset++] = 0xc0; /* mov es, eax */
-    stub[offset++] = 0x8e; stub[offset++] = 0xe0; /* mov fs, eax */
-    stub[offset++] = 0x8e; stub[offset++] = 0xe8; /* mov gs, eax */
-    stub[offset++] = 0x8e; stub[offset++] = 0xd0; /* mov ss, eax */
-
-    /* Clear Paging Bit */
-    stub[offset++] = 0x0f; stub[offset++] = 0x20; stub[offset++] = 0xc0;
-    stub[offset++] = 0x25; stub[offset++] = 0xff; stub[offset++] = 0xff; stub[offset++] = 0xff; stub[offset++] = 0x7f;
-    stub[offset++] = 0x0f; stub[offset++] = 0x22; stub[offset++] = 0xc0;
-
-    /* Pipeline flush */
-    stub[offset++] = 0xeb; stub[offset++] = 0x00;
-
-    /* Clear LME bit */
-    stub[offset++] = 0xb9; stub[offset++] = 0x80; stub[offset++] = 0x00; stub[offset++] = 0x00; stub[offset++] = 0xc0;
-    stub[offset++] = 0x0f; stub[offset++] = 0x32;
-    stub[offset++] = 0x25; stub[offset++] = 0xff; stub[offset++] = 0xfe; stub[offset++] = 0xff; stub[offset++] = 0xff;
-    stub[offset++] = 0x0f; stub[offset++] = 0x30;
-
-    /* Zero Page Pointer */
-    stub[offset++] = 0xbe;
-    zp_phys = (unsigned int)zero_page_phys;
-    memcpy(&stub[offset], &zp_phys, 4); offset += 4;
-
-    /* CRITICAL 6.12 STACK STABILITY FIX:
-     * Explicitly configure the 32-bit stack pointer ESP to point to a reliable, standard,
-     * hardcoded physical memory address (e.g., 0x90000) right before the jump. 
-     */
-    stub[offset++] = 0xbc; /* mov esp, imm32 */
-    stable_boot_stack = 0x90000;
-    memcpy(&stub[offset], &stable_boot_stack, 4); offset += 4;
-
-    /* Clear Boot Registers */
-    stub[offset++] = 0x31; stub[offset++] = 0xc0;
-    stub[offset++] = 0x31; stub[offset++] = 0xdb;
-    stub[offset++] = 0x31; stub[offset++] = 0xc9;
-    stub[offset++] = 0x31; stub[offset++] = 0xd2;
-    stub[offset++] = 0x31; stub[offset++] = 0xff;
-    stub[offset++] = 0x31; stub[offset++] = 0xed;
-
-    /* Jump to Entry (Exactly 0x100000 now that the 16-bit header is stripped) */
-    stub[offset++] = 0xb8; stub[offset++] = 0x00; stub[offset++] = 0x00; stub[offset++] = 0x10; stub[offset++] = 0x00;
-    stub[offset++] = 0xff; stub[offset++] = 0xe0;
-
-    wbinvd(); /* Flush machine code to memory */
+    /* Copy our compiled position-independent assembly template right after the control block */
+    trampoline_size = (size_t)(trampoline_end - trampoline_start);
+    memcpy((void *)(low_page_virt + 32), (void *)trampoline_start, trampoline_size);
 
     /* --- PHASE 2: SYSTEM TEARDOWN --- */
     printk(KERN_EMERG "kexec: Quiescing core systems...\n");
@@ -487,6 +432,9 @@ static void execute_trampoline(void)
 
     printk(KERN_EMERG "kexec: Trampoline primed. Executing identity-mapped jump...\n");
 
+    /* Point execution straight to our copied assembly block (offset 32 bytes past the control block) */
+    jump_target = low_page_phys + 32;
+
     /* Blastoff with mandatory hardware cache flush so our physical writes hit main RAM */
     asm volatile("wbinvd\n\t");
 
@@ -503,7 +451,7 @@ static void execute_trampoline(void)
         "cli\n\t"
         "jmp *%0\n\t"
         :
-        : "r"(low_page_phys)
+        : "r"(jump_target)
         : "memory"
     );
 }
@@ -555,7 +503,7 @@ static long kexec_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
             if (ptr_migrate_to_reboot_cpu) ptr_migrate_to_reboot_cpu();
             
-            /* DIAGNOSTIC: Temporarily disabled device_shutdown to keep the display active */
+            /* DIAGNOSTIC: Temporarily disabled device_shutdown to keep display registers mapped */
             /* if (ptr_device_shutdown) ptr_device_shutdown(); */
             
             if (ptr_smp_send_stop) ptr_smp_send_stop();
@@ -673,3 +621,99 @@ static void __exit dummy_kexec_exit(void)
 
 module_init(dummy_kexec_init);
 module_exit(dummy_kexec_exit);
+
+/* ==============================================================================
+ * UNIFIED SYSTEM TRANSITION TRAMPOLINE (GLOBAL ASSEMBLY BLOCK)
+ * ==============================================================================
+ * This compiled block of code contains our clean, position-independent mode 
+ * switches. Because it is mapped inside the identity-mapped physical page,
+ * it runs completely safely without triggering paging desync Triple Faults!
+ * ==============================================================================
+ */
+asm(
+    ".code64\n"
+    ".align 8\n"
+    ".globl trampoline_start\n"
+    "trampoline_start:\n"
+    "    cli\n"
+    
+    /* RIP-relative access to the trampoline_control block at start of page (offset -32) */
+    "    movq -32(%rip), %rax\n"     /* %rax = low_page_phys */
+    "    movq -24(%rip), %rbx\n"     /* %rbx = zero_page_phys */
+    
+    /* Dynamically configure the GDT base pointer using the low_page physical offset */
+    "    lea gdt_desc(%rip), %rdx\n"
+    "    movq %rax, %rdi\n"
+    "    addq $(gdt_start - trampoline_start), %rdi\n"
+    "    movq %rdi, 2(%rdx)\n"       /* Patch GDT base address inside descriptor */
+    "    lgdt (%rdx)\n"              /* Load 32-bit compatible GDT descriptor */
+    
+    /* Switch stack pointer safely to low_page_phys + 2048 */
+    "    movq %rax, %rsp\n"
+    "    addq $2048, %rsp\n"
+    
+    /* Setup Stack Frame for the 32-bit Compatibility Mode Transition (lretq) */
+    "    movq %rax, %rdi\n"
+    "    addq $(compat_mode_start - trampoline_start), %rdi\n"
+    "    pushq $0x10\n"              /* Target CS selector (32-bit Code Segment) */
+    "    pushq %rdi\n"               /* Target instruction pointer (RIP) */
+    "    lretq\n"                    /* Far return switch */
+
+    ".align 8\n"
+    "gdt_start:\n"
+    "    .quad 0x0000000000000000\n" /* Null Segment */
+    "    .quad 0x00af9b000000ffff\n" /* 64-bit Code Segment Descriptor (0x08) */
+    "    .quad 0x00cf9a000000ffff\n" /* 32-bit Code Segment Descriptor (0x10) */
+    "    .quad 0x00cf92000000ffff\n" /* 32-bit Data Segment Descriptor (0x18) */
+    "gdt_desc:\n"
+    "    .word 31\n"                 /* GDT Limit */
+    "    .quad 0\n"                  /* GDT Physical Base (filled dynamically) */
+
+    ".code32\n"
+    "compat_mode_start:\n"
+    "    movl $0x18, %eax\n"         /* Load DS selector (32-bit Data) */
+    "    movl %eax, %ds\n"
+    "    movl %eax, %es\n"
+    "    movl %eax, %ss\n"
+    "    movl %eax, %fs\n"
+    "    movl %eax, %gs\n"
+    
+    /* Disable Paging (Clear PG bit in CR0) */
+    "    movl %cr0, %eax\n"
+    "    andl $0x7fffffff, %eax\n"
+    "    movl %eax, %cr0\n"
+    "    jmp 1f\n"                   /* Flush prefetch queue */
+    "1:\n"
+    
+    /* Disable Long Mode in EFER MSR */
+    "    movl $0xc0000080, %ecx\n"
+    "    rdmsr\n"
+    "    andl $0xfffffeff, %eax\n"   /* Clear LME bit */
+    "    wrmsr\n"
+    
+    /* Load Standard Kernel Boot Parameters */
+    "    movl %ebx, %esi\n"          /* ESI = Zero Page physical pointer */
+    "    movl $0x90000, %esp\n"      /* Set standard stable 32-bit boot stack */
+    
+    /* Clear boots registers */
+    "    xorl %ebx, %ebx\n"
+    "    xorl %ecx, %ecx\n"
+    "    xorl %edx, %edx\n"
+    "    xorl %edi, %edi\n"
+    "    xorl %ebp, %ebp\n"
+    
+    /* --- PHYSICAL DIAGNOSTIC STALL LOOP --- */
+    "    movl $3000000000, %ecx\n"
+    "delay_loop:\n"
+    "    nop\n"
+    "    decl %ecx\n"
+    "    jnz delay_loop\n"
+    
+    /* Direct Jump into 32-bit Kernel Entry Point (0x100000) */
+    "    movl $0x100000, %eax\n"
+    "    jmpl *%eax\n"
+
+    ".code64\n"                      /* Restore assembler state back to 64-bit */
+    ".globl trampoline_end\n"
+    "trampoline_end:\n"
+);
