@@ -281,6 +281,7 @@ static void execute_trampoline(void)
     unsigned long *stack_frame;
     unsigned int zp_phys;
     unsigned int stable_boot_stack;
+    volatile unsigned long long delay_counter;
 
     /* --- PHASE 1: SAFE ALLOCATIONS & STUB BUILDING (Interrupts ON, Scheduling Active) --- */
     low_page_virt = __get_free_page(GFP_KERNEL | GFP_DMA | __GFP_ZERO);
@@ -487,8 +488,18 @@ static void execute_trampoline(void)
     printk(KERN_EMERG "kexec: Trampoline primed. Executing identity-mapped jump...\n");
 
     /* Blastoff with mandatory hardware cache flush so our physical writes hit main RAM */
+    asm volatile("wbinvd\n\t");
+
+    /* --- DIAGNOSTIC HARDWARE DELAY LOOP --- 
+     * This loop stalls the CPU for several seconds, forcing the display buffer to remain
+     * visible before the identity jump happens. If the screen hangs on the line above
+     * and THEN reboots, the copy phase succeeded and the target kernel is crashing.
+     */
+    for (delay_counter = 0; delay_counter < 3000000000ULL; delay_counter++) {
+        asm volatile("nop\n\t");
+    }
+
     asm volatile(
-        "wbinvd\n\t"
         "cli\n\t"
         "jmp *%0\n\t"
         :
@@ -543,7 +554,10 @@ static long kexec_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
             if (ret) return ret;
 
             if (ptr_migrate_to_reboot_cpu) ptr_migrate_to_reboot_cpu();
-            if (ptr_device_shutdown) ptr_device_shutdown();
+            
+            /* DIAGNOSTIC: Temporarily disabled device_shutdown to keep the display active */
+            /* if (ptr_device_shutdown) ptr_device_shutdown(); */
+            
             if (ptr_smp_send_stop) ptr_smp_send_stop();
             if (ptr_syscore_shutdown) ptr_syscore_shutdown();
 
