@@ -40,10 +40,10 @@ LOAD_RET=$?
 echo "[*] finit_loader exit code: $LOAD_RET" > /dev/$ACTIVE_TTY
 
 echo "[*] Extracting hidden kernel logs (dmesg):" > /dev/$ACTIVE_TTY
-dmesg | grep kexec > /dev/kmsg
+dmesg | grep kexec > /dev/$ACTIVE_TTY
 
-echo "[*] Checking /proc/modules to verify memory residency:" > /dev/kmsg
-grep kexec /proc/modules > /dev/kmsg || echo "[-] Module NOT found in /proc/modules!" > /dev/kmsg
+echo "[*] Checking /proc/modules to verify memory residency:" > /dev/$ACTIVE_TTY
+grep kexec /proc/modules > /dev/$ACTIVE_TTY || echo "[-] Module NOT found in /proc/modules!" > /dev/$ACTIVE_TTY
 
 #echo "[*] Dumping ENTIRE /proc/misc to kernel log:" > /dev/kmsg
 #cat /proc/misc > /dev/kmsg
@@ -83,7 +83,7 @@ grep kexec /proc/modules > /dev/kmsg || echo "[-] Module NOT found in /proc/modu
 # fi
 
 # --- PROBE DYNAMIC SYMBOLS ---
-echo "[*] Checking kexec symbols in the running kernel..." > /dev/kmsg
+echo "[*] Checking kexec symbols in the running kernel..." > /dev/$ACTIVE_TTY
 grep -i kexec_mod /proc/kallsyms > /dev/$ACTIVE_TTY || echo "[-] No kexec_mod symbols found in kallsyms!" > /dev/$ACTIVE_TTY
 
 echo "[*] Checking if misc_register symbol is present in the host kernel..." > /dev/$ACTIVE_TTY
