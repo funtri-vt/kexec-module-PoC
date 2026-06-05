@@ -185,21 +185,26 @@ static int load_user_to_scatter_buffer(struct scatter_buffer *buf, const void __
     return 0;
 }
 
-/* Struct representing boot parameter segments (Zero Page) */
+/* Struct representing boot parameter segments (Zero Page)
+ * CRITICAL FIXED offsets aligned with standard Linux kernel boot specifications:
+ * - 0x000: screen_info
+ * - 0x0c0: ext_ramdisk_image (64-bit support)
+ * - 0x0c4: ext_ramdisk_size (64-bit support)
+ * - 0x1e8: e820_entries
+ * - 0x1f1: setup_header
+ * - 0x2d0: e820_table
+ */
 struct real_boot_params {
-    uint8_t reserved1[0x1e8];
-    uint8_t e820_entries;          /* Offset 0x1e8 */
-    uint8_t reserved2[0x8];
-    uint32_t ext_ramdisk_image;    /* Offset 0x0c0 (64-bit support) */
-    uint32_t ext_ramdisk_size;     /* Offset 0x0c4 (64-bit support) */
-    uint8_t reserved3[0x14];
-    uint8_t screen_info[0x40];     /* Offset 0x000 (VGA/Framebuffers) */
-    uint8_t reserved4[0xb8];
-    uint8_t setup_header[0x100];   /* Offset 0x1f1 */
-    uint8_t reserved5[0x10];
-    uint32_t cmd_line_ptr;         /* Offset 0x228 */
-    uint8_t reserved6[0xa4];
-    uint8_t e820_table[112 * 20];  /* Offset 0x2d0 (Up to 112 memory segments) */
+    /* 0x000 */ uint8_t screen_info[0x40];
+    /* 0x040 */ uint8_t padding1[0x80];         /* Pad up to 0x0c0 */
+    /* 0x0c0 */ uint32_t ext_ramdisk_image;     /* 0x0c0 */
+    /* 0x0c4 */ uint32_t ext_ramdisk_size;      /* 0x0c4 */
+    /* 0x0c8 */ uint8_t padding2[0x120];        /* Pad up to 0x1e8 */
+    /* 0x1e8 */ uint8_t e820_entries;           /* 0x1e8 */
+    /* 0x1e9 */ uint8_t padding3[0x8];          /* Pad up to 0x1f1 */
+    /* 0x1f1 */ uint8_t setup_header[0x9f];     /* 0x1f1 (Standard setup header size is 159 bytes) */
+    /* 0x290 */ uint8_t padding4[0x40];         /* Pad up to 0x2d0 */
+    /* 0x2d0 */ uint8_t e820_table[112 * 20];   /* 0x2d0 */
 } __attribute__((packed));
 
 static int setup_zero_page(void)
@@ -214,7 +219,7 @@ static int setup_zero_page(void)
     memset(zp, 0, PAGE_SIZE_4K);
 
     kernel_setup = (unsigned char *)loaded_kernel.virt_addrs[0];
-    memcpy(zp->setup_header, kernel_setup + 0x1f1, 0x100);
+    memcpy(zp->setup_header, kernel_setup + 0x1f1, 0x9f); // Copy verified standard setup header size
 
     /* --- BARE-METAL UPGRADE: HOST E820 REPLICATION --- */
     host_boot_params = (void *)kallsyms_lookup_name("boot_params");
@@ -281,7 +286,8 @@ static int setup_zero_page(void)
     }
 
     if (kernel_cmdline) {
-        zp->cmd_line_ptr = 0x10000;
+        /* Set command line pointer dynamically using absolute offset in zero page */
+        *(uint32_t *)((unsigned char *)zp + 0x228) = 0x10000;
     }
 
     return 0;
