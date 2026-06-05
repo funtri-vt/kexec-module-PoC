@@ -32,6 +32,7 @@ INTERMEDIATE_KERNEL_BRANCH="linux-4.14.y"
 FINAL_KERNEL_BRANCH="linux-6.12.y"
 
 BUSYBOX_REPO="https://git.busybox.net/busybox"
+BUSYBOX_REPO_TWO="https://github.com/vda-linux/busybox_mirror"
 BUSYBOX_BRANCH="1_36_stable"
 # ==============================================================================
 
@@ -205,7 +206,7 @@ if [ "$CACHE_HIT" = "true" ] && [ -d "$BB_DIR/_install" ]; then
     make CONFIG_PREFIX="$WORKSPACE/final_rootfs_busybox/_install" install
 else
     if [ ! -d "$BB_DIR" ]; then
-        git clone --depth 1 -b "$BUSYBOX_BRANCH" "$BUSYBOX_REPO" "$BB_DIR"
+        git clone --depth 1 -b "$BUSYBOX_BRANCH" "$BUSYBOX_REPO" "$BB_DIR" || git clone --depth 1 -b "$BUSYBOX_BRANCH" "$BUSYBOX_REPO_TWO" "$BB_DIR"
     fi
     cd "$BB_DIR"
     make defconfig
