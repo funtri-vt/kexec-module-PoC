@@ -116,7 +116,7 @@ cat << 'EOF' > "$INTERMEDIATE_BUILD_DIR/init"
 #!/bin/sh
 
 # Mount minimal filesystems FIRST so we have device nodes to write to
-mkdir -p /proc /sys /dev
+mkdir -p /proc /sys /dev /mnt
 mount -t proc none /proc
 mount -t sysfs none /sys
 mount -t devtmpfs none /dev
