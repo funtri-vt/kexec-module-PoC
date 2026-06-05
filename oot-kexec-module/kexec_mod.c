@@ -62,6 +62,7 @@ static void (*ptr_device_shutdown)(void) = NULL;
 static void (*ptr_syscore_shutdown)(void) = NULL;
 static int (*ptr_migrate_to_reboot_cpu)(void) = NULL;
 static void (*ptr_smp_send_stop)(void) = NULL;
+static void (*ptr_native_stop_other_cpus)(int wait) = NULL; /* Fallback SMP stopper */
 static void (*ptr_lapic_shutdown)(void) = NULL;
 static struct screen_info *ptr_screen_info = NULL;
 
@@ -558,11 +559,22 @@ static long kexec_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
             if (ptr_migrate_to_reboot_cpu) ptr_migrate_to_reboot_cpu();
             
-            /* DIAGNOSTIC: Temporarily disabled device_shutdown to keep display registers mapped */
-            if (ptr_device_shutdown) ptr_device_shutdown();
+            /* BARE-METAL UPGRADE: 
+             * Intentionally disabling generic system shutdown handlers to avoid AMD IOMMU 
+             * and DMA panic states immediately before transition!
+             */
+            // if (ptr_device_shutdown) ptr_device_shutdown();
             
-            if (ptr_smp_send_stop) ptr_smp_send_stop();
-            if (ptr_syscore_shutdown) ptr_syscore_shutdown();
+            /* Attempt multiple SMP halt fallback strategies */
+            if (ptr_smp_send_stop) {
+                ptr_smp_send_stop();
+            } else if (ptr_native_stop_other_cpus) {
+                ptr_native_stop_other_cpus(0); /* 0 usually implies no indefinite wait */
+            } else {
+                printk(KERN_EMERG "kexec: CRITICAL WARNING! No SMP stop function found! Core 1 may cause MCE.\n");
+            }
+            
+            // if (ptr_syscore_shutdown) ptr_syscore_shutdown();
 
             execute_trampoline();
             break;
@@ -604,6 +616,7 @@ int run_hijacked_initialization(void)
     ptr_syscore_shutdown = (void *)kallsyms_lookup_name("syscore_shutdown");
     ptr_migrate_to_reboot_cpu = (void *)kallsyms_lookup_name("migrate_to_reboot_cpu");
     ptr_smp_send_stop = (void *)kallsyms_lookup_name("smp_send_stop");
+    ptr_native_stop_other_cpus = (void *)kallsyms_lookup_name("native_stop_other_cpus");
     ptr_lapic_shutdown = (void *)kallsyms_lookup_name("lapic_shutdown");
     ptr_screen_info = (struct screen_info *)kallsyms_lookup_name("screen_info");
 
@@ -611,6 +624,10 @@ int run_hijacked_initialization(void)
     if (!ptr_syscore_shutdown) printk(KERN_EMERG "kexec: syscore_shutdown symbol missing!\n");
     if (!ptr_migrate_to_reboot_cpu) printk(KERN_EMERG "kexec: migrate_to_reboot_cpu symbol missing!\n");
     if (!ptr_smp_send_stop) printk(KERN_EMERG "kexec: smp_send_stop symbol missing!\n");
+
+    if (!ptr_smp_send_stop && !ptr_native_stop_other_cpus) {
+        printk(KERN_EMERG "kexec: WARNING - Secondary cores cannot be halted! Pivot may be unstable.\n");
+    }
 
     if (!ptr_screen_info) {
         printk(KERN_EMERG "kexec: screen_info not found. Display might be corrupted after pivot.\n");
