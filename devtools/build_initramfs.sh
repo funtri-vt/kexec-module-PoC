@@ -121,6 +121,15 @@ mount -t proc none /proc
 mount -t sysfs none /sys
 mount -t devtmpfs none /dev
 
+# Mount your USB drive (or wherever you are booting from, e.g., sda4)
+mount -t ext4 /dev/sda4 /mnt
+
+# Write a proof of life file
+echo "THE KEXEC PIVOT SURVIVED!" > /mnt/KEXEC_SUCCESS.txt
+sync
+
+# Force a hardware reboot
+echo b > /proc/sysrq-trigger
 # Now route everything to the kernel log so we can actually see it!
 exec >/dev/kmsg 2>&1
 
