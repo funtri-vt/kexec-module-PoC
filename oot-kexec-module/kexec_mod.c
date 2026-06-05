@@ -297,8 +297,11 @@ static void execute_trampoline(void)
     struct trampoline_control *ctrl;
     unsigned long jump_target;
 
-    /* --- PHASE 1: SAFE ALLOCATIONS & STUB BUILDING (Interrupts ON, Scheduling Active) --- */
-    low_page_virt = __get_free_page(GFP_KERNEL | GFP_DMA | __GFP_ZERO);
+    /* --- PHASE 1: SAFE ALLOCATIONS & STUB BUILDING (Interrupts ON, Scheduling Active) ---
+     * BARE-METAL UPGRADE: Force low_page_virt allocation to use GFP_DMA32, capping its absolute
+     * address boundary to the 32-bit (4GB) physical ceiling.
+     */
+    low_page_virt = __get_free_page(GFP_DMA32 | __GFP_ZERO);
     if (!low_page_virt) {
         printk(KERN_EMERG "kexec: Failed to allocate transition page!\n");
         return;
@@ -555,8 +558,11 @@ int run_hijacked_initialization(void)
         printk(KERN_EMERG "kexec: screen_info not found. Display might be corrupted after pivot.\n");
     }
 
-    /* Force the zero page to be allocated above 16MB boundary */
-    zero_page_virt = (void *)get_safe_high_page(GFP_KERNEL | __GFP_ZERO);
+    /* Force the zero page to be allocated above 16MB boundary 
+     * BARE-METAL UPGRADE: Enforce GFP_DMA32 on physical memory allocation bounds to prevent 
+     * address truncation registers during mode pivot.
+     */
+    zero_page_virt = (void *)get_safe_high_page(GFP_DMA32 | __GFP_ZERO);
     if (!zero_page_virt) {
         printk(KERN_EMERG "kexec: Failed to allocate zero page.\n");
         return -ENOMEM;
