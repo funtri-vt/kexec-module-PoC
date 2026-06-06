@@ -156,7 +156,7 @@ echo "[AUTOMATON] Relaying detected console parameter: $TARGET_CONSOLE_ARG"
 # - Appended TARGET_CONSOLE_ARG so the final kernel can parse it too
 /sbin/kexec -l /payload/bzImage \
     --initrd=/payload/initramfs.cpio.gz \
-    --command-line="console=tty0 console=$TARGET_TTY $TARGET_CONSOLE_ARG root=/dev/ram0 rw debug earlyprintk=serial,ttyS0,115200 loglevel=8 initcall_debug cros_debug cros_secure=0 reset_devices i8042.reset i8042.nomux amd_iommu=off iommu=soft nomodeset"
+    --command-line="console=tty0 console=$TARGET_TTY $TARGET_CONSOLE_ARG root=/dev/ram0 rw debug earlyprintk=serial,ttyS0,115200 loglevel=8 initcall_debug cros_debug cros_secure=0 reset_devices i8042.reset i8042.nomux amd_iommu=off iommu=soft amdgpu.dpm=0 amdgpu.dc=0"
 
 # Execute the native handoff (this properly shuts down the UART!)
 echo "[AUTOMATON] Executing native kexec jump NOW."
