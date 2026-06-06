@@ -104,6 +104,14 @@ mkdir -p "$MOUNT_DIR"
 mount -o ro "$TARGET_PART" "$MOUNT_DIR"
 MOUNTED=1
 
+# ==============================================================================
+# TEMPORARY DIAGNOSTIC DEBUG LINE
+# This will print the exact location of any "stoney" files on the mounted image
+# ==============================================================================
+echo "[DEBUG] Scanning mounted image for stoney firmware files..."
+find "$MOUNT_DIR" -name "*stoney*" || true
+echo "=============================================================================="
+
 # --- AUTOMATED COPY ---
 echo "[*] Verifying target directory inside mounted image..."
 FIRMWARE_SRC="$MOUNT_DIR/$FIRMWARE_SUBPATH"
