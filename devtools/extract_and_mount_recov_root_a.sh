@@ -104,12 +104,11 @@ mkdir -p "$MOUNT_DIR"
 mount -o ro "$TARGET_PART" "$MOUNT_DIR"
 MOUNTED=1
 
-# ==============================================================================
-# TEMPORARY DIAGNOSTIC DEBUG LINE
-# This will print the exact location of any "stoney" files on the mounted image
-# ==============================================================================
+echo "[DEBUG] Listing top-level directories on mounted image:"
+ls -la "$MOUNT_DIR" || true
+
 echo "[DEBUG] Scanning mounted image for stoney firmware files..."
-find "$MOUNT_DIR" -name "*stoney*" || true
+find "$MOUNT_DIR" -iname "*stoney*" || true
 echo "=============================================================================="
 
 # --- AUTOMATED COPY ---
