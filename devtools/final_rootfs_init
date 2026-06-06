@@ -1,10 +1,30 @@
 #!/bin/sh
 
 # 1. Mount essential filesystems
-/bin/busybox mkdir -p /proc /sys /dev /dev/pts
-/bin/busybox mount -t proc none /proc
-/bin/busybox mount -t sysfs none /sys
-/bin/busybox mount -t devtmpfs none /dev 2>/dev/null || true
+mkdir -p /proc /sys /dev /mnt
+mount -t proc none /proc
+mount -t sysfs none /sys
+mount -t devtmpfs none /dev 2>/dev/null || true
+
+mkdir /mnt/testing
+mount -t ext4 /dev/sda4 /mnt/testing
+sleep 5
+echo "========================================" >> /mnt/testing/kexec_success.log
+echo "SUCCESS: Final kernel reached on $(date)" >> /mnt/testing/kexec_success.log
+echo "========================================" >> /mnt/testing/kexec_success.log
+
+sleep 3
+sync
+
+sleep 3
+echo $(dmesg) > /mnt/testing/kexec_success_dmesg.log
+
+sleep 3
+sync
+umount /mnt/testing
+sleep 1
+echo 1 > /proc/sysrq
+echo b > /proc/sysrq-trigger
 
 # --- DYNAMIC HARDWARE BINDING ---
 # Parse the relayed command line to find the exact hardware port we booted with
@@ -22,10 +42,10 @@ done
 TARGET_DEV="/dev/$TARGET_TTY"
 
 # 2. Print a welcome message to the kernel log
-/bin/busybox echo "==========================================" > /dev/kmsg
-/bin/busybox echo "   WELCOME TO THE FINAL SHELL" > /dev/kmsg
-/bin/busybox echo "   SPAWNING DIRECT CONSOLE ON $TARGET_DEV..." > /dev/kmsg
-/bin/busybox echo "==========================================" > /dev/kmsg
+echo "==========================================" > /dev/kmsg
+echo "   WELCOME TO THE FINAL SHELL" > /dev/kmsg
+echo "   SPAWNING DIRECT CONSOLE ON $TARGET_DEV..." > /dev/kmsg
+echo "==========================================" > /dev/kmsg
 
 # 3. Setup Environment
 export PATH="/bin:/sbin:/usr/bin:/usr/sbin"
@@ -34,7 +54,7 @@ export TERM="linux"
 export PS1="Final Shell# "
 
 # 4. Clear any stale serial line settings to ensure clean input/output
-/bin/busybox stty -F $TARGET_DEV clocal sane 2>/dev/null || true
+stty -F $TARGET_DEV clocal sane 2>/dev/null || true
 
 # 5. Launch the shell!
 # We attempt cttyhack first as it establishes a true controlling terminal.
@@ -45,4 +65,4 @@ echo "   WELCOME TO THE FINAL SHELL"
 echo "=========================================="
 echo ""
 
-exec /bin/busybox setsid /bin/busybox cttyhack /bin/sh || exec /bin/busybox sh -i <$TARGET_DEV >$TARGET_DEV 2>&1
+exec setsid cttyhack /bin/sh || exec sh -i <$TARGET_DEV >$TARGET_DEV 2>&1
