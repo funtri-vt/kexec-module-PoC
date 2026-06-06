@@ -17,7 +17,7 @@ sleep 3
 sync
 
 sleep 3
-echo $(dmesg) > /mnt/testing/kexec_success_dmesg.log
+dmesg > /mnt/testing/kexec_success_dmesg.log
 
 sleep 3
 sync
