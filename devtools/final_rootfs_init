@@ -1,69 +1,59 @@
 #!/bin/sh
 
 # 1. Mount essential filesystems
-mkdir -p /proc /sys /dev /mnt
+mkdir -p /proc /sys /dev /mnt/testing
 mount -t proc none /proc
 mount -t sysfs none /sys
 mount -t devtmpfs none /dev 2>/dev/null || true
 
-mkdir /mnt/testing
-mount -t ext4 /dev/sda4 /mnt/testing
-sleep 5
-echo "========================================" >> /mnt/testing/kexec_success.log
-echo "SUCCESS: Final kernel reached on $(date)" >> /mnt/testing/kexec_success.log
-echo "========================================" >> /mnt/testing/kexec_success.log
-
-sleep 3
-sync
-
-sleep 3
-dmesg > /mnt/testing/kexec_success_dmesg.log
-
-sleep 3
-sync
-umount /mnt/testing
-sleep 1
-echo 1 > /proc/sys/kernel/sysrq
-echo s > /proc/sysrq-trigger
-echo b > /proc/sysrq-trigger
-
-# --- DYNAMIC HARDWARE BINDING ---
-# Parse the relayed command line to find the exact hardware port we booted with
-CMDLINE=$(cat /proc/cmdline)
-TARGET_TTY="ttyS0" # Fallback if missing
-for arg in $CMDLINE; do
-    case "$arg" in
-        target_console=*)
-            RAW_TTY="${arg#target_console=}"
-            # Strip baud rate from string if present (e.g. ttyS0,115200 -> ttyS0)
-            TARGET_TTY=$(echo "$RAW_TTY" | cut -d, -f1)
-            ;;
-    esac
+# --- WAIT FOR USB DEVICE TO ENUMERATE ---
+# USB storage drivers take time to initialize. We poll for up to 10 seconds.
+for i in 1 2 3 4 5 6 7 8 9 10; do
+    if [ -b "/dev/sda4" ]; then
+        break
+    fi
+    sleep 1
 done
-TARGET_DEV="/dev/$TARGET_TTY"
 
-# 2. Print a welcome message to the kernel log
-echo "==========================================" > /dev/kmsg
-echo "   WELCOME TO THE FINAL SHELL" > /dev/kmsg
-echo "   SPAWNING DIRECT CONSOLE ON $TARGET_DEV..." > /dev/kmsg
-echo "==========================================" > /dev/kmsg
+# --- THE HEADLESS MOUNT TEST ---
+MOUNTED=0
 
-# 3. Setup Environment
-export PATH="/bin:/sbin:/usr/bin:/usr/sbin"
-export HOME="/"
-export TERM="linux"
-export PS1="Final Shell# "
+# Try sda4 first. (No -t flag so the kernel auto-detects the filesystem type)
+if mount /dev/sda4 /mnt/testing 2>/dev/null; then
+    MOUNTED=1
+# Fallback to sdb4 just in case an internal drive accidentally took the 'sda' letter
+#elif mount /dev/sdb4 /mnt/testing 2>/dev/null; then
+#    MOUNTED=1
+fi
 
-# 4. Clear any stale serial line settings to ensure clean input/output
-stty -F $TARGET_DEV clocal sane 2>/dev/null || true
-
-# 5. Launch the shell!
-# We attempt cttyhack first as it establishes a true controlling terminal.
-# We bind explicitly to the dynamically detected hardware device.
-echo ""
-echo "=========================================="
-echo "   WELCOME TO THE FINAL SHELL"
-echo "=========================================="
-echo ""
-
-exec setsid cttyhack /bin/sh || exec sh -i <$TARGET_DEV >$TARGET_DEV 2>&1
+if [ $MOUNTED -eq 1 ]; then
+    # ==========================================
+    # SUCCESS PATH: Write, Sync, FAST REBOOT
+    # ==========================================
+    echo "========================================" >> /mnt/testing/kexec_success.log
+    echo "SUCCESS: Final kernel reached on $(date)" >> /mnt/testing/kexec_success.log
+    echo "========================================" >> /mnt/testing/kexec_success.log
+    
+    # Dump the kernel ring buffer directly to the disk!
+    dmesg > /mnt/testing/kexec_success_dmesg.log
+    
+    # Flush buffers to physical USB storage
+    sync
+    sleep 3
+    umount /mnt/testing
+    
+    # TRIGGER FAST REBOOT (Signals Success! ~10 seconds)
+    echo 1 > /proc/sys/kernel/sysrq
+    echo s > /proc/sysrq-trigger
+    sleep 1
+    echo b > /proc/sysrq-trigger
+else
+    # ==========================================
+    # FAILURE PATH: Wait 30 seconds, SLOW REBOOT
+    # ==========================================
+    # If mount fails, sit on the screen for 30s.
+    sleep 30
+    
+    echo 1 > /proc/sys/kernel/sysrq
+    echo b > /proc/sysrq-trigger
+fi
