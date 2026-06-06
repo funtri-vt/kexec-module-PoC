@@ -104,11 +104,18 @@ mkdir -p "$MOUNT_DIR"
 mount -o ro "$TARGET_PART" "$MOUNT_DIR"
 MOUNTED=1
 
-echo "[DEBUG] Listing top-level directories on mounted image:"
+# ==============================================================================
+# TEMPORARY DIAGNOSTIC DEBUG LINES
+# ==============================================================================
+echo "=============================================================================="
+echo "[DEBUG] 1. Checking if the mount directory has files:"
 ls -la "$MOUNT_DIR" || true
 
-echo "[DEBUG] Scanning mounted image for stoney firmware files..."
+echo "[DEBUG] 2. Searching case-insensitively for any firmware files:"
 find "$MOUNT_DIR" -iname "*stoney*" || true
+
+echo "[DEBUG] 3. Let's see what is inside the firmware directory if it exists:"
+ls -la "$MOUNT_DIR/usr/lib/firmware" 2>/dev/null || ls -la "$MOUNT_DIR/lib/firmware" 2>/dev/null || echo "[-] No firmware directory found at all!"
 echo "=============================================================================="
 
 # --- AUTOMATED COPY ---
