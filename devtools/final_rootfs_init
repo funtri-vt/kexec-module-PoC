@@ -23,7 +23,8 @@ sleep 3
 sync
 umount /mnt/testing
 sleep 1
-echo 1 > /proc/sysrq
+echo 1 > /proc/sys/kernel/sysrq
+echo s > /proc/sysrq-trigger
 echo b > /proc/sysrq-trigger
 
 # --- DYNAMIC HARDWARE BINDING ---
