@@ -2,7 +2,7 @@
   "board": "grunt",
   "description": "AMD Stoney Ridge Chromebook GPU Firmware Configuration",
   "recovery_url": "https://dl.google.com/dl/edgedl/chromeos/recovery/chromeos_16610.57.0_grunt_recovery_stable-channel_GruntMPKeys-v13.bin.zip",
-  "firmware_subpath": "lib/firmware/amdgpu",
+  "firmware_subpath": "usr/lib/firmware/amdgpu",
   "files": [
     "stoney_ce.bin",
     "stoney_me.bin",
