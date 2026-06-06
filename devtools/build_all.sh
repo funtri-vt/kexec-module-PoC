@@ -170,10 +170,12 @@ else
     # Force CONFIG_KEXEC ON for the jump capability
     ./scripts/config --enable CONFIG_KEXEC
     
-    # --- HARDWARE ENABLEMENT FOR DISPLAY & INPUT ---
-    echo "  [*] Enabling Target Hardware Configs (DRM, Framebuffer, USB, CROS EC)..."
-    ./scripts/config --enable CONFIG_DRM_AMDGPU
-    ./scripts/config --enable CONFIG_FRAMEBUFFER_CONSOLE
+    # --- BLINDING THE AUTOMATON ---
+    echo "  [*] Disabling Graphics on Automaton to prevent double-init crash..."
+    ./scripts/config --disable CONFIG_DRM_AMDGPU
+    ./scripts/config --disable CONFIG_FRAMEBUFFER_CONSOLE
+    
+    # Keep Input enabled in case we add emergency debug shells
     ./scripts/config --enable CONFIG_USB_SUPPORT
     ./scripts/config --enable CONFIG_USB_XHCI_HCD
     ./scripts/config --enable CONFIG_KEYBOARD_CROS_EC
