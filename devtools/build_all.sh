@@ -8,11 +8,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE="$(cd "$SCRIPT_DIR/.." && pwd)"
 CORES=$(nproc) # Get number of CPU cores for fast compilation
 
+# Determine BOARD from environment, default to "unknown" if not set
+BOARD="${BOARD:-unknown}"
+
 echo "=========================================================="
 echo "  MASTER ORCHESTRATOR: KEXEC 3-STAGE PIPELINE BUILDER"
 echo "=========================================================="
 echo "[*] Workspace: $WORKSPACE"
 echo "[*] Compiling with $CORES threads..."
+echo "[*] Target Board: $BOARD"
 
 if [ "$CACHE_HIT" = "true" ]; then
     echo "[+] CACHE RESTORED: Heavy compilation steps will be bypassed if binaries exist!"
@@ -31,6 +35,7 @@ MAINLINE_KERNEL_REPO="https://git.kernel.org/pub/scm/linux/kernel/git/stable/lin
 INTERMEDIATE_KERNEL_BRANCH="linux-4.14.y"
 FINAL_KERNEL_BRANCH="linux-6.12.y"
 
+BUSYBOX_REPO="https://git.kernel.org/pub/scm/utils/dash/dash.git" # Fallback link replaced for formatting
 BUSYBOX_REPO="https://git.busybox.net/busybox"
 BUSYBOX_REPO_TWO="https://github.com/vda-linux/busybox_mirror"
 BUSYBOX_BRANCH="1_36_stable"
@@ -161,8 +166,19 @@ else
     fi
     cd "$INT_KDIR"
     make defconfig
+    
     # Force CONFIG_KEXEC ON for the jump capability
-    sed -i 's/# CONFIG_KEXEC is not set/CONFIG_KEXEC=y/' .config
+    ./scripts/config --enable CONFIG_KEXEC
+    
+    # --- HARDWARE ENABLEMENT FOR DISPLAY & INPUT ---
+    echo "  [*] Enabling Target Hardware Configs (DRM, Framebuffer, USB, CROS EC)..."
+    ./scripts/config --enable CONFIG_DRM_AMDGPU
+    ./scripts/config --enable CONFIG_FRAMEBUFFER_CONSOLE
+    ./scripts/config --enable CONFIG_USB_SUPPORT
+    ./scripts/config --enable CONFIG_USB_XHCI_HCD
+    ./scripts/config --enable CONFIG_KEYBOARD_CROS_EC
+    
+    make olddefconfig
     make -j"$CORES" bzImage
 fi
 
@@ -179,6 +195,16 @@ else
     fi
     cd "$FIN_KDIR"
     make defconfig
+    
+    # --- HARDWARE ENABLEMENT FOR DISPLAY & INPUT ---
+    echo "  [*] Enabling Target Hardware Configs (DRM, Framebuffer, USB, CROS EC)..."
+    ./scripts/config --enable CONFIG_DRM_AMDGPU
+    ./scripts/config --enable CONFIG_FRAMEBUFFER_CONSOLE
+    ./scripts/config --enable CONFIG_USB_SUPPORT
+    ./scripts/config --enable CONFIG_USB_XHCI_HCD
+    ./scripts/config --enable CONFIG_KEYBOARD_CROS_EC
+    
+    make olddefconfig
     make -j"$CORES" bzImage
 fi
 
@@ -243,6 +269,10 @@ cd "$WORKSPACE/usermode"
 gcc -static -o custom_kexec custom_kexec.c 
 gcc -static -o finit_loader finit_loader.c
 
+# --- PHASE 8.5: FIRMWARE ACQUISITION ---
+echo ">>> [Phase 8.5] Injecting Proprietary Firmware Blobs..."
+cd "$WORKSPACE"
+bash ./devtools/add_firmware_to_initramfs.sh "$BOARD" "$WORKSPACE/busybox/_install" "$WORKSPACE/final_rootfs_busybox/_install"
 
 # --- PHASE 9: PAYLOAD ASSEMBLY & INJECTION ---
 echo ">>> [Phase 9] Assembling nested payloads and injecting into Shim..."

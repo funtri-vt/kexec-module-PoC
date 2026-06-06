@@ -93,6 +93,7 @@ mkdir -p "$INTERMEDIATE_BUILD_DIR"/{dev,proc,sys,payload}
 echo "[*] Copying BusyBox utilities to intermediate rootfs..."
 cp -a "$HOST_INSTALL_DIR/bin" "$INTERMEDIATE_BUILD_DIR/"
 cp -a "$HOST_INSTALL_DIR/sbin" "$INTERMEDIATE_BUILD_DIR/"
+cp -a "$HOST_INSTALL_DIR/lib" "$INTERMEDIATE_BUILD_DIR/"
 if [ -d "$HOST_INSTALL_DIR/usr" ]; then
     cp -a "$HOST_INSTALL_DIR/usr" "$INTERMEDIATE_BUILD_DIR/"
 fi
@@ -120,29 +121,13 @@ mount -t proc none /proc
 mount -t sysfs none /sys
 mount -t devtmpfs none /dev
 
-# 2. Wait for the block subsystem to probe USB/SATA drives!
-sleep 5
-
-# 3. Create mount point and mount the drive
-mkdir -p /mnt
-mount -t ext4 /dev/sda4 /mnt
-
-# 4. WRITE THE PROOF
-echo "THE KEXEC PIVOT SURVIVED!" > /mnt/KEXEC_SUCCESS.txt
-sync
-
-# 5. Wait a second to ensure the write flushes to the physical USB drive
-sleep 2
-
-# 6. Enable SysRq and trigger an immediate hardware reboot
-echo 1 > /proc/sys/kernel/sysrq
-echo b > /proc/sysrq-trigger
-# Now route everything to the kernel log so we can actually see it!
+# Route everything to the kernel log so we can actually see it if the display works!
 exec >/dev/kmsg 2>&1
 
 echo ""
 echo "===================================================="
 echo "  [AUTOMATON] SUCCESS: WE ARE ALIVE IN STAGE 2!"
+echo "  [AUTOMATON] FIRMWARE INJECTED AND SIGHT RESTORED!"
 echo "===================================================="
 echo ""
 
