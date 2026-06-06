@@ -93,7 +93,7 @@ mkdir -p "$INTERMEDIATE_BUILD_DIR"/{dev,proc,sys,payload}
 echo "[*] Copying BusyBox utilities to intermediate rootfs..."
 cp -a "$HOST_INSTALL_DIR/bin" "$INTERMEDIATE_BUILD_DIR/"
 cp -a "$HOST_INSTALL_DIR/sbin" "$INTERMEDIATE_BUILD_DIR/"
-if [ -d "$HOST_INSTALL_DIR" ]; then
+if [ -d "$HOST_INSTALL_DIR/lib" ]; then
     cp -a "$HOST_INSTALL_DIR/lib" "$INTERMEDIATE_BUILD_DIR/"
 fi
 if [ -d "$HOST_INSTALL_DIR/usr" ]; then
