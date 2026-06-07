@@ -24,28 +24,32 @@ if mount /dev/sda4 /mnt/testing 2>/dev/null; then
 fi
 
 if [ $MOUNTED -eq 1 ]; then
-    # ==========================================
-    # SUCCESS PATH: Write, Sync, FAST REBOOT
-    # ==========================================
-    echo "========================================" >> /mnt/testing/kexec_success.log
-    echo "SUCCESS: Final kernel reached on $(date)" >> /mnt/testing/kexec_success.log
-    echo "========================================" >> /mnt/testing/kexec_success.log
+    echo "[*] USB Mounted. Starting continuous background log dump..."
     
-    # Dump the massive DRM-verbose kernel ring buffer
-    dmesg > /mnt/testing/kexec_success_dmesg.log
+    # Start a background loop that constantly flushes dmesg to the USB
+    (
+        while true; do
+            dmesg > /mnt/testing/crash_catcher_dmesg.log
+            sync
+            sleep 1 
+        done
+    ) &
     
-    # Dump the hardware topologies for deep-dive analysis
-    lspci -nnk > /mnt/testing/kexec_lspci.log
-    lsusb > /mnt/testing/kexec_lsusb.log
-    #busybox dir here doesn't have lsblk
-    #lsblk > /mnt/testing/kexec_lsblk.log
-    
-    # Flush buffers to physical USB storage
-    sync
+    echo "[*] Triggering AMDGPU initialization in 3 seconds..."
     sleep 3
+    
+    # Load the module and trigger the crash!
+    # (Using modprobe automatically loads dependencies like drm.ko)
+    modprobe amdgpu
+    
+    # If the system survives, clean up and FAST REBOOT
+    sleep 5
+    echo "[+] System survived GPU init!" >> /mnt/testing/kexec_success.log
+    sync
+    kill %1 # Kill the background logging loop
     umount /mnt/testing
     
-    # TRIGGER FAST REBOOT (Signals Success! ~10-12 seconds)
+    # TRIGGER FAST REBOOT (Signals Success!)
     echo 1 > /proc/sys/kernel/sysrq
     echo s > /proc/sysrq-trigger
     sleep 1

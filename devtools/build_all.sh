@@ -35,7 +35,6 @@ MAINLINE_KERNEL_REPO="https://git.kernel.org/pub/scm/linux/kernel/git/stable/lin
 INTERMEDIATE_KERNEL_BRANCH="linux-4.14.y"
 FINAL_KERNEL_BRANCH="linux-6.12.y"
 
-BUSYBOX_REPO="https://git.kernel.org/pub/scm/utils/dash/dash.git" # Fallback link replaced for formatting
 BUSYBOX_REPO="https://git.busybox.net/busybox"
 BUSYBOX_REPO_TWO="https://github.com/vda-linux/busybox_mirror"
 BUSYBOX_BRANCH="1_36_stable"
@@ -191,6 +190,10 @@ FIN_KDIR="$WORKSPACE/final_kernel"
 
 if [ "$CACHE_HIT" = "true" ] && [ -f "$FIN_KDIR/arch/x86/boot/bzImage" ]; then
     echo "  [+] Cached final target kernel found! Skipping compilation."
+    cd "$FIN_KDIR"
+    echo "  [*] Installing cached kernel modules to final rootfs staging..."
+    mkdir -p "$WORKSPACE/final_rootfs_busybox/_install"
+    make INSTALL_MOD_PATH="$WORKSPACE/final_rootfs_busybox/_install" modules_install
 else
     if [ ! -d "$FIN_KDIR" ]; then
         git clone --depth 1 -b "$FINAL_KERNEL_BRANCH" "$MAINLINE_KERNEL_REPO" "$FIN_KDIR"
@@ -200,14 +203,19 @@ else
     
     # --- HARDWARE ENABLEMENT FOR DISPLAY & INPUT ---
     echo "  [*] Enabling Target Hardware Configs (DRM, Framebuffer, USB, CROS EC)..."
-    ./scripts/config --enable CONFIG_DRM_AMDGPU
+    ./scripts/config --module CONFIG_DRM_AMDGPU
     ./scripts/config --enable CONFIG_FRAMEBUFFER_CONSOLE
     ./scripts/config --enable CONFIG_USB_SUPPORT
     ./scripts/config --enable CONFIG_USB_XHCI_HCD
     ./scripts/config --enable CONFIG_KEYBOARD_CROS_EC
     
     make olddefconfig
-    make -j"$CORES" bzImage
+    echo "  [*] Compiling Kernel and Modules..."
+    make -j"$CORES" bzImage modules
+    
+    echo "  [*] Installing kernel modules to final rootfs staging..."
+    mkdir -p "$WORKSPACE/final_rootfs_busybox/_install"
+    make INSTALL_MOD_PATH="$WORKSPACE/final_rootfs_busybox/_install" modules_install
 fi
 
 
