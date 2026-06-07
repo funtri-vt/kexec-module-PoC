@@ -1,107 +1,69 @@
 #!/bin/sh
 
 # 1. Mount essential filesystems
-mkdir -p /proc /sys /dev /tmp /run /mnt/testing
+mkdir -p /proc /sys /dev /mnt/testing
 mount -t proc none /proc
 mount -t sysfs none /sys
 mount -t devtmpfs none /dev 2>/dev/null || true
 
-echo "===================================================="
-echo "  [NETWORK BOOT] LAUNCHING HEADLESS DIAGNOSTIC INIT  "
-echo "===================================================="
+# Redirect standard descriptors to the GSC serial console for visibility
+exec 0</dev/ttyS0
+exec 1>/dev/ttyS0
+exec 2>/dev/ttyS0
 
-# --- PHASE 1: PARSE KERNEL COMMAND LINE ---
-CMDLINE=$(cat /proc/cmdline)
-WIFI_SSID=""
-WIFI_PASS=""
-TARGET_IP=""
+echo "===================================================="
+echo "   [CCD SERIAL BOOT] FINAL TARGET KERNEL REACHED    "
+echo "===================================================="
+echo "[*] System identity: $(hostname 2>/dev/null || echo "headless-stoney")"
 
-for arg in $CMDLINE; do
-    case "$arg" in
-        wifi_ssid=*)
-            WIFI_SSID="${arg#wifi_ssid=}"
-            ;;
-        wifi_pass=*)
-            WIFI_PASS="${arg#wifi_pass=}"
-            ;;
-        target_ip=*)
-            TARGET_IP="${arg#target_ip=}"
-            ;;
-    esac
+# --- WAIT FOR USB DEVICE TO ENUMERATE ---
+echo "[*] Polling for USB storage device (/dev/sda4)..."
+for i in 1 2 3 4 5 6 7 8 9 10; do
+    if [ -b "/dev/sda4" ]; then
+        echo "[+] USB storage device detected."
+        break
+    fi
+    sleep 1
 done
 
-# --- PHASE 2: HARDWARE IDENTITY CONFIGURATION ---
-echo "[*] Configuring hardware network identity..."
-
-# Set a custom system hostname
-hostname "headless-stoney"
-
-# Bring down the interface to spoof the MAC address
-if [ -d /sys/class/net/wlan0 ]; then
-    ip link set dev wlan0 down 2>/dev/null || ifconfig wlan0 down 2>/dev/null
-    
-    # Set a custom MAC address (adjust the placeholder hex values as desired)
-    ip link set dev wlan0 address 00:11:22:33:44:55 2>/dev/null || ifconfig wlan0 hw ether 00:11:22:33:44:55 2>/dev/null
-    
-    ip link set dev wlan0 up 2>/dev/null || ifconfig wlan0 up 2>/dev/null
-    echo "[+] Hardware identity configured successfully."
-else
-    echo "[-] Error: Wireless interface wlan0 not detected!"
+# --- THE MOUNT TEST ---
+MOUNTED=0
+if mount /dev/sda4 /mnt/testing 2>/dev/null; then
+    MOUNTED=1
+    echo "[+] USB successfully mounted to /mnt/testing."
 fi
 
-# --- PHASE 3: ESTABLISH WIRELESS CONNECTION ---
-if [ -n "$WIFI_SSID" ] && [ -n "$WIFI_PASS" ]; then
-    echo "[*] Generating wireless configuration for SSID: $WIFI_SSID"
+# --- AMDGPU INITIALIZATION ---
+echo "[*] Ready. Loading AMDGPU module via modprobe..."
+echo "[*] Watch closely; if a hardware lockup occurs, the trace will spill below:"
+echo "------------------------------------------------------------------------"
+
+# Trigger the module load
+modprobe amdgpu
+
+# --- POST-MODULE EXECUTION (IF SYSTEM SURVIVES) ---
+if [ $? -eq 0 ]; then
+    echo "------------------------------------------------------------------------"
+    echo "[+] Success: System survived AMDGPU driver initialization!"
     
-    # Generate standard wpa_supplicant file on the fly in volatile storage
-    mkdir -p /etc/wpa_supplicant
-    cat << EOF > /tmp/wpa_supplicant.conf
-ctrl_interface=/var/run/wpa_supplicant
-update_config=1
-network={
-    ssid="$WIFI_SSID"
-    psk="$WIFI_PASS"
-}
-EOF
-
-    echo "[*] Launching wpa_supplicant background daemon..."
-    wpa_supplicant -B -i wlan0 -c /tmp/wpa_supplicant.conf -f /tmp/wpa_supplicant.log
-
-    echo "[*] Requesting IP address from DHCP lease server..."
-    udhcpc -i wlan0 -n -q -T 5 -t 3
-else
-    echo "[!] Warning: Wi-Fi credentials missing from kernel command line parameters."
-fi
-
-# --- PHASE 4: REMOTE TELEMETRY DEPLOYMENT ---
-# Check if we successfully obtained a network route
-if ip route | grep -q wlan0 || route -n | grep -q wlan0; then
-    echo "[+] Network connection established successfully!"
-    
-    # OPTION A: Stream live kernel panic logs to a remote listener machine
-    if [ -n "$TARGET_IP" ]; then
-        echo "[*] Initializing remote kernel log stream to $TARGET_IP..."
-        # Continuously transmit dmesg logs to your development machine's netcat listener
-        (
-            while true; do
-                dmesg | nc "$TARGET_IP" 9001
-                sleep 2
-            done
-        ) &
+    if [ $MOUNTED -eq 1 ]; then
+        echo "SUCCESS: Final kernel reached on $(date)" >> /mnt/testing/kexec_success.log
+        dmesg > /mnt/testing/kexec_success_dmesg.log
+        sync
+        umount /mnt/testing
     fi
-
-    # OPTION B: Open a stable interactive console session using BusyBox telnetd
-    echo "[*] Initializing local terminal shell service on port 23..."
-    # Starts BusyBox login console without requiring a password for quick local development
-    telnetd -l /bin/sh -p 23
     
-    # Sit in a safe hold loop keeping the environment active for your connection
+    echo "[*] Spawning interactive root rescue shell on serial console..."
+    # Launch an unauthenticated shell directly over the serial line
     while true; do
-        sleep 5
+        /bin/sh
     done
 else
-    echo "[-] Network deployment failed. Falling back to storage loop configuration."
-    sleep 30
+    echo "[-] Error: modprobe exited with an error code."
+    if [ $MOUNTED -eq 1 ]; then
+        umount /mnt/testing
+    fi
+    sleep 10
     echo 1 > /proc/sys/kernel/sysrq
     echo b > /proc/sysrq-trigger
 fi
