@@ -139,12 +139,24 @@ echo "[AUTOMATON] Parsing and loading final target kernel..."
 CMDLINE=$(cat /proc/cmdline)
 TARGET_CONSOLE_ARG=""
 TARGET_TTY="ttyS0,115200" # Fallback if missing
+WIFI_SSID_ARG=""
+WIFI_PASS_ARG=""
+TARGET_IP_ARG=""
 
 for arg in $CMDLINE; do
     case "$arg" in
         target_console=*)
             TARGET_CONSOLE_ARG="$arg"
             TARGET_TTY="${arg#target_console=}"
+            ;;
+        wifi_ssid=*)
+            WIFI_SSID_ARG="$arg"
+            ;;
+        wifi_pass=*)
+            WIFI_PASS_ARG="$arg"
+            ;;
+        target_ip=*)
+            TARGET_IP_ARG="$arg"
             ;;
     esac
 done
@@ -167,7 +179,7 @@ fi
 # Added the "Kitchen Sink" AMDGPU stability parameters and stripped nomodeset
 /sbin/kexec -l /payload/bzImage \
     --initrd=/payload/initramfs.cpio.gz \
-    --command-line="console=tty0 console=$TARGET_TTY $TARGET_CONSOLE_ARG root=/dev/ram0 rw debug earlyprintk=serial,ttyS0,115200 loglevel=8 initcall_debug cros_debug cros_secure=0 reset_devices i8042.reset i8042.nomux amd_iommu=off iommu=soft amdgpu.sg_display=0 amdgpu.runpm=0 amdgpu.aspm=0 amdgpu.dc=0 amdgpu.dpm=0 amdgpu.bapm=0 amdgpu.audio=0 video=efifb:off video=vesafb:off video=simplefb:off sysfb_disable=1 drm.debug=0x1e"
+    --command-line="console=tty0 console=$TARGET_TTY $TARGET_CONSOLE_ARG root=/dev/ram0 rw debug earlyprintk=serial,ttyS0,115200 loglevel=8 initcall_debug cros_debug cros_secure=0 reset_devices i8042.reset i8042.nomux amd_iommu=off iommu=soft amdgpu.sg_display=0 amdgpu.runpm=0 amdgpu.aspm=0 amdgpu.dc=0 amdgpu.dpm=0 amdgpu.bapm=0 amdgpu.audio=0 video=efifb:off video=vesafb:off video=simplefb:off sysfb_disable=1 drm.debug=0x1e nomodeset $WIFI_SSID_ARG $WIFI_PASS_ARG $TARGET_IP_ARG"
 
 # Execute the native handoff (this properly shuts down the UART!)
 echo "[AUTOMATON] Executing native kexec jump NOW."

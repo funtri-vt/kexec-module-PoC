@@ -208,6 +208,17 @@ else
     ./scripts/config --enable CONFIG_USB_SUPPORT
     ./scripts/config --enable CONFIG_USB_XHCI_HCD
     ./scripts/config --enable CONFIG_KEYBOARD_CROS_EC
+
+    # Core Networking & Wireless Stack
+    ./scripts/config --enable CONFIG_NET
+    ./scripts/config --enable CONFIG_WIRELESS
+    ./scripts/config --module CONFIG_CFG80211
+    ./scripts/config --module CONFIG_MAC80211
+
+    # Common Chromebook Wi-Fi Drivers
+    # grunt wifi drivers
+    ./scripts/config --module CONFIG_ATH10K
+    ./scripts/config --module CONFIG_ATH10K_PCI
     
     make olddefconfig
     echo "  [*] Compiling Kernel and Modules..."
