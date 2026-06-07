@@ -203,7 +203,7 @@ else
     
     # --- HARDWARE ENABLEMENT FOR DISPLAY & INPUT ---
     echo "  [*] Enabling Target Hardware Configs (DRM, Framebuffer, USB, CROS EC)..."
-    ./scripts/config --module CONFIG_DRM_AMDGPU
+    ./scripts/config --enable CONFIG_DRM_AMDGPU
     ./scripts/config --enable CONFIG_FRAMEBUFFER_CONSOLE
     ./scripts/config --enable CONFIG_USB_SUPPORT
     ./scripts/config --enable CONFIG_USB_XHCI_HCD
