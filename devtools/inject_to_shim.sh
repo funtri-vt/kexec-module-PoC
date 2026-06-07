@@ -5,7 +5,12 @@
 # RUN THIS SCRIPT WITH SUDO: sudo ./devtools/inject_to_shim.sh <path_to_shim.bin>
 # Exit immediately if any command fails
 set -e
+set -o pipefail
 
+# check dependencies
+for cmd in kpartx cgpt e2fsck resize2fs mkfs.ext4 truncate cpio zcat mount umount; do
+  command -v $cmd >/dev/null || { echo "Missing required: $cmd"; exit 1; }
+done
 # Dynamically calculate the workspace root folder relative to this script's directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -103,7 +108,7 @@ FS_TYPE=$(blkid -o value -s TYPE "$TARGET_PART" || echo "none")
 if [ "$FS_TYPE" != "ext4" ]; then
     echo "  [!] Destination partition 4 is currently formatted as '$FS_TYPE'. Creating new ext4 filesystem..."
     # Format partition 4 with ext4 so we can cleanly write to it
-    mkfs.ext4 -F -F -O ^metadata_csum,^has_journal "$TARGET_PART"
+    mkfs.ext4 -F -O ^metadata_csum,^has_journal "$TARGET_PART"
     echo "  [+] Partition 4 formatted successfully to ext4."
 else
     echo "  [+] Verified Partition 4 is already ext4."
@@ -140,7 +145,7 @@ echo "  [+] Extraction complete."
 # Verify the presence of critical components
 echo "[*] Verifying target directory structure..."
 CHECK_FAILED=0
-for file in "init" "lib/kexec_mod.ko" "bin/custom_kexec" "boot/target_bzImage" "boot/target_initrd.cpio.gz"; do
+for file in "init" "lib/kexec_mod.ko" "bin/custom_kexec" "bin/finit_loader" "boot/target_bzImage" "boot/target_initrd.cpio.gz"; do
     if [ -f "$file" ]; then
         echo "  [+] Found: $file"
     else
@@ -149,9 +154,41 @@ for file in "init" "lib/kexec_mod.ko" "bin/custom_kexec" "boot/target_bzImage" "
     fi
 done
 
+# --- STEP 4.5: SHRINK FILESYSTEM AND TRUNCATE IMAGE ---
+echo "[*] Step 4.5: Shrinking partition 4 and truncating image..."
+cd "$WORKSPACE"
+
+echo "  [*] Unmounting partition to safely resize..."
+umount "$MOUNT_DIR"
+
+echo "  [*] Resizing ext4 filesystem on $TARGET_PART to 500M..."
+e2fsck -y -f "$TARGET_PART" || true
+resize2fs "$TARGET_PART" 500M
+
+echo "  [*] Releasing loopback mappings to modify GPT..."
+kpartx -d "$SHIM_IMG" 2>/dev/null || true
+MAPPED=0
+
+echo "  [*] Updating GPT partition table for Partition 4 (500MB)..."
+cgpt add -i 4 -s 1024000 "$SHIM_IMG"
+
+P4_START=$(cgpt show -i 4 -b "$SHIM_IMG")
+P4_SIZE=$(cgpt show -i 4 -s "$SHIM_IMG")
+[ -n "$P4_START" ] && [ -n "$P4_SIZE" ] || { echo "Failed to read partition info"; exit 1; }
+P4_END=$((P4_START + P4_SIZE))
+
+# Pad 2048 sectors (1MB) + 33 sectors for GPT backup
+NEW_SECTORS=$((P4_END + 2081))
+NEW_BYTES=$((NEW_SECTORS * 512))
+
+echo "  [*] Truncating raw image file to $NEW_BYTES bytes..."
+truncate -s "$NEW_BYTES" "$SHIM_IMG"
+
+echo "  [*] Repairing GPT headers after truncation..."
+cgpt repair "$SHIM_IMG" || true
+
 # --- STEP 5: FLUSH WRITES ---
 echo "[*] Step 5: Syncing changes..."
-cd "$WORKSPACE"
 
 # Sync guarantees any cached filesystem operations are flushed directly into the physical .bin blocks
 sync
