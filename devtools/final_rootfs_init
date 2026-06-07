@@ -18,12 +18,9 @@ done
 # --- THE HEADLESS MOUNT TEST ---
 MOUNTED=0
 
-# Try sda4 first. (No -t flag so the kernel auto-detects the filesystem type)
+# Try sda4 first.
 if mount /dev/sda4 /mnt/testing 2>/dev/null; then
     MOUNTED=1
-# Fallback to sdb4 just in case an internal drive accidentally took the 'sda' letter
-#elif mount /dev/sdb4 /mnt/testing 2>/dev/null; then
-#    MOUNTED=1
 fi
 
 if [ $MOUNTED -eq 1 ]; then
@@ -34,15 +31,21 @@ if [ $MOUNTED -eq 1 ]; then
     echo "SUCCESS: Final kernel reached on $(date)" >> /mnt/testing/kexec_success.log
     echo "========================================" >> /mnt/testing/kexec_success.log
     
-    # Dump the kernel ring buffer directly to the disk!
+    # Dump the massive DRM-verbose kernel ring buffer
     dmesg > /mnt/testing/kexec_success_dmesg.log
+    
+    # Dump the hardware topologies for deep-dive analysis
+    lspci -nnk > /mnt/testing/kexec_lspci.log
+    lsusb > /mnt/testing/kexec_lsusb.log
+    #busybox dir here doesn't have lsblk
+    #lsblk > /mnt/testing/kexec_lsblk.log
     
     # Flush buffers to physical USB storage
     sync
     sleep 3
     umount /mnt/testing
     
-    # TRIGGER FAST REBOOT (Signals Success! ~10 seconds)
+    # TRIGGER FAST REBOOT (Signals Success! ~10-12 seconds)
     echo 1 > /proc/sys/kernel/sysrq
     echo s > /proc/sysrq-trigger
     sleep 1
@@ -51,7 +54,7 @@ else
     # ==========================================
     # FAILURE PATH: Wait 30 seconds, SLOW REBOOT
     # ==========================================
-    # If mount fails, sit on the screen for 30s.
+    # If mount fails, sit on the white screen for 30s.
     sleep 30
     
     echo 1 > /proc/sys/kernel/sysrq

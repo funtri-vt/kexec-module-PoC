@@ -151,12 +151,23 @@ done
 
 echo "[AUTOMATON] Relaying detected console parameter: $TARGET_CONSOLE_ARG"
 
+# --- PHASE 1: GPU BRAIN-WIPE ---
+# Forcibly unbind the dirty RMA frame buffer and send a physical PCI reset 
+# to the Stoney Ridge GPU to prepare it for the new AMDGPU driver.
+echo "[AUTOMATON] Forcing GPU PCI Reset to clear dirty RMA state..."
+if [ -d /sys/bus/pci/devices/0000:00:01.0 ]; then
+    echo "0000:00:01.0" > /sys/bus/pci/drivers/amdgpu/unbind 2>/dev/null || true
+    echo 1 > /sys/bus/pci/devices/0000:00:01.0/reset 2>/dev/null || true
+    echo "[AUTOMATON] GPU reset pulse sent!"
+else
+    echo "[AUTOMATON] Warning: GPU 0000:00:01.0 not found!"
+fi
+
 # Load the final kernel natively using kexec-tools
-# - Merged dynamic console variables to ensure correct physical output
-# - Appended TARGET_CONSOLE_ARG so the final kernel can parse it too
+# Added the "Kitchen Sink" AMDGPU stability parameters and stripped nomodeset
 /sbin/kexec -l /payload/bzImage \
     --initrd=/payload/initramfs.cpio.gz \
-    --command-line="console=tty0 console=$TARGET_TTY $TARGET_CONSOLE_ARG root=/dev/ram0 rw debug earlyprintk=serial,ttyS0,115200 loglevel=8 initcall_debug cros_debug cros_secure=0 reset_devices i8042.reset i8042.nomux amd_iommu=off iommu=soft amdgpu.sg_display=0 amdgpu.runpm=0 amdgpu.aspm=0 nomodeset"
+    --command-line="console=tty0 console=$TARGET_TTY $TARGET_CONSOLE_ARG root=/dev/ram0 rw debug earlyprintk=serial,ttyS0,115200 loglevel=8 initcall_debug cros_debug cros_secure=0 reset_devices i8042.reset i8042.nomux amd_iommu=off iommu=soft amdgpu.sg_display=0 amdgpu.runpm=0 amdgpu.aspm=0 amdgpu.dc=0 amdgpu.dpm=0 amdgpu.bapm=0 amdgpu.audio=0 video=efifb:off video=vesafb:off video=simplefb:off sysfb_disable=1 drm.debug=0x1e"
 
 # Execute the native handoff (this properly shuts down the UART!)
 echo "[AUTOMATON] Executing native kexec jump NOW."
