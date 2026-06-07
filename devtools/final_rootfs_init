@@ -1,10 +1,11 @@
 #!/bin/sh
 
 # 1. Mount essential filesystems
-mkdir -p /proc /sys /dev /mnt/testing
+mkdir -p /proc /sys /dev /dev/pts
 mount -t proc none /proc
 mount -t sysfs none /sys
 mount -t devtmpfs none /dev 2>/dev/null || true
+mount -t devpts none /dev/pts 2>/dev/null || true
 
 # Redirect standard descriptors to the GSC serial console for visibility
 exec 0</dev/ttyS0
@@ -15,55 +16,24 @@ echo "===================================================="
 echo "   [CCD SERIAL BOOT] FINAL TARGET KERNEL REACHED    "
 echo "===================================================="
 echo "[*] System identity: $(hostname 2>/dev/null || echo "headless-stoney")"
+echo "[*] Direct serial console active. Ready for live debugging."
 
-# --- WAIT FOR USB DEVICE TO ENUMERATE ---
-echo "[*] Polling for USB storage device (/dev/sda4)..."
-for i in 1 2 3 4 5 6 7 8 9 10; do
-    if [ -b "/dev/sda4" ]; then
-        echo "[+] USB storage device detected."
-        break
-    fi
-    sleep 1
-done
+# 2. Setup Environment
+export PATH="/bin:/sbin:/usr/bin:/usr/sbin"
+export HOME="/"
+export TERM="linux"
+export PS1="Final-Serial# "
 
-# --- THE MOUNT TEST ---
-MOUNTED=0
-if mount /dev/sda4 /mnt/testing 2>/dev/null; then
-    MOUNTED=1
-    echo "[+] USB successfully mounted to /mnt/testing."
-fi
+# 3. Clear any stale serial line settings to ensure clean input/output
+stty -F /dev/ttyS0 clocal sane 2>/dev/null || true
 
-# --- AMDGPU INITIALIZATION ---
-echo "[*] Ready. Loading AMDGPU module via modprobe..."
-echo "[*] Watch closely; if a hardware lockup occurs, the trace will spill below:"
-echo "------------------------------------------------------------------------"
+# 4. Launch the shell!
+# We attempt cttyhack first as it establishes a true controlling terminal.
+# We bind explicitly to the serial hardware device.
+echo ""
+echo "===================================================="
+echo "   WELCOME TO THE LIVE DIAGNOSTIC SERIAL SHELL"
+echo "===================================================="
+echo ""
 
-# Trigger the module load
-modprobe amdgpu
-
-# --- POST-MODULE EXECUTION (IF SYSTEM SURVIVES) ---
-if [ $? -eq 0 ]; then
-    echo "------------------------------------------------------------------------"
-    echo "[+] Success: System survived AMDGPU driver initialization!"
-    
-    if [ $MOUNTED -eq 1 ]; then
-        echo "SUCCESS: Final kernel reached on $(date)" >> /mnt/testing/kexec_success.log
-        dmesg > /mnt/testing/kexec_success_dmesg.log
-        sync
-        umount /mnt/testing
-    fi
-    
-    echo "[*] Spawning interactive root rescue shell on serial console..."
-    # Launch an unauthenticated shell directly over the serial line
-    while true; do
-        /bin/sh
-    done
-else
-    echo "[-] Error: modprobe exited with an error code."
-    if [ $MOUNTED -eq 1 ]; then
-        umount /mnt/testing
-    fi
-    sleep 10
-    echo 1 > /proc/sys/kernel/sysrq
-    echo b > /proc/sysrq-trigger
-fi
+exec setsid cttyhack /bin/sh || exec sh -i </dev/ttyS0 >/dev/ttyS0 2>&1
