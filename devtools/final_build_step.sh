@@ -56,6 +56,19 @@ else
     exit 1
 fi
 
+# 2.5. Copy licenses
+echo "[*] Step 2.5: Deploying licensing info..."
+if [ -f "$WORKSPACE/LICENSE" ]; then
+    # Ensure the destination directory exists and copy to it
+    mkdir -p "$WORKSPACE/final_rootfs_busybox/_install"
+    cp "$WORKSPACE/LICENSE" "$WORKSPACE/final_rootfs_busybox/_install/KEXEC_MOD_LICENSE"
+    mkdir -p "$WORKSPACE/busybox/_install"
+    cp "$WORKSPACE/LICENSE" "$WORKSPACE/busybox/_install/KEXEC_MOD_LICENSE"
+    echo "  [+] Licenses installed."
+else
+    echo "  [-] WARNING: Missing source file $WORKSPACE/LICENSE"
+fi
+
 # 3. Pack the final rootfs archive (Cleaned-up pack_final_rootfs.sh logic)
 echo "[*] Step 3: Packing final target rootfs archive..."
 if [ -d "$WORKSPACE/final_rootfs_busybox/_install" ]; then

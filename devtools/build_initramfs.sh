@@ -100,6 +100,16 @@ if [ -d "$HOST_INSTALL_DIR/usr" ]; then
     cp -a "$HOST_INSTALL_DIR/usr" "$INTERMEDIATE_BUILD_DIR/"
 fi
 
+echo "[*] Copying license to intermediate rootfs..."
+if [ -f "$WORKSPACE/LICENSE" ]; then
+    # Ensure the destination directory exists and copy to it
+    mkdir -p "$INTERMEDIATE_BUILD_DIR"
+    cp "$WORKSPACE/LICENSE" "$INTERMEDIATE_BUILD_DIR/KEXEC_MOD_LICENSE"
+    echo "[+] Licenses installed."
+else
+    echo "[-] WARNING: Missing source file $WORKSPACE/LICENSE"
+fi
+
 # Ensure /bin/sh exists just in case
 if [ ! -e "$INTERMEDIATE_BUILD_DIR/bin/sh" ]; then
     ln -s busybox "$INTERMEDIATE_BUILD_DIR/bin/sh"
