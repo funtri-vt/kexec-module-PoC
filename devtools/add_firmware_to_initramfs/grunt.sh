@@ -36,6 +36,8 @@ for file in "${STONEY_FILES[@]}"; do
     
     # Mirror the downloaded file to the Final Rootfs directory
     cp "${HOST_DIR}/lib/firmware/amdgpu/${file}" "${FINAL_DIR}/lib/firmware/amdgpu/${file}"
+    chmod 644 "${HOST_DIR}/lib/firmware/amdgpu/${file}"
+    chmod 644 "${FINAL_DIR}/lib/firmware/amdgpu/${file}"
 done
 
 echo "  [+] Grunt firmware injection complete!"

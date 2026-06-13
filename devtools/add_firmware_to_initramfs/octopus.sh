@@ -34,6 +34,8 @@ for file in "${GLK_FILES[@]}"; do
     
     # Mirror the downloaded file to the Final Rootfs directory
     cp "${HOST_DIR}/lib/firmware/i915/${file}" "${FINAL_DIR}/lib/firmware/i915/${file}"
+    chmod 644 "${HOST_DIR}/lib/firmware/amdgpu/${file}"
+    chmod 644 "${FINAL_DIR}/lib/firmware/amdgpu/${file}"
 done
 
 echo "  [+] Octopus firmware injection complete!"
