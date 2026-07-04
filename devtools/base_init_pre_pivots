@@ -1,4 +1,4 @@
 #!/bin/sh
 finit_loader lib/kexec_mod.ko
 sleep 1
-custom_kexec
+custom_kexec -c "console=ttyS0,115200"
