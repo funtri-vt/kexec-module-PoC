@@ -111,14 +111,9 @@ else
 fi
 
 echo "[*] Adding /etc/cros_boardname to intermediate rootfs..."
-if [ -f "$WORKSPACE/LICENSE" ]; then
-    # Ensure the destination directory exists and copy to it
-    mkdir -p "$INTERMEDIATE_BUILD_DIR/etc/"
-    echo $BOARD > $INTERMEDIATE_BUILD_DIR/etc/cros_boardname
-    echo "[+] /etc/cros_boardname installed."
-else
-    echo "[-] WARNING: Missing source file $WORKSPACE/LICENSE"
-fi
+mkdir -p "$INTERMEDIATE_BUILD_DIR/etc/"
+echo $BOARD > $INTERMEDIATE_BUILD_DIR/etc/cros_boardname
+echo "[+] /etc/cros_boardname installed."
 
 # Ensure /bin/sh exists just in case
 if [ ! -e "$INTERMEDIATE_BUILD_DIR/bin/sh" ]; then
