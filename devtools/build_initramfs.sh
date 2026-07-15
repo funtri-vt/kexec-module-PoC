@@ -154,34 +154,55 @@ CMDLINE=$(cat /proc/cmdline)
 TARGET_CONSOLE_ARG=""
 TARGET_TTY="ttyS0,115200" # Fallback if missing
 
+BOARD_ID_ARG=""
+BOARD_ID=""
+BOARD_ID_SRC=""
+
 for arg in $CMDLINE; do
     case "$arg" in
         target_console=*)
             TARGET_CONSOLE_ARG="$arg"
             TARGET_TTY="${arg#target_console=}"
             ;;
+        board_id=*)
+            BOARD_ID_SRC="cmdline"
+            BOARD_ID_ARG="$arg"
+            BOARD_ID="${arg#board_id=}"
+            ;;
     esac
 done
 
-echo "[AUTOMATON] Relaying detected console parameter: $TARGET_CONSOLE_ARG"
 
-# --- PHASE 1: GPU BRAIN-WIPE ---
-# Forcibly unbind the dirty RMA frame buffer and send a physical PCI reset 
-# to the Stoney Ridge GPU to prepare it for the new AMDGPU driver.
-echo "[AUTOMATON] Forcing GPU PCI Reset to clear dirty RMA state..."
-if [ -d /sys/bus/pci/devices/0000:00:01.0 ]; then
-    echo "0000:00:01.0" > /sys/bus/pci/drivers/amdgpu/unbind 2>/dev/null || true
-    echo 1 > /sys/bus/pci/devices/0000:00:01.0/reset 2>/dev/null || true
-    echo "[AUTOMATON] GPU reset pulse sent!"
-else
-    echo "[AUTOMATON] Warning: GPU 0000:00:01.0 not found!"
+if [ -z "$BOARD_ID" ]; then
+    BOARD_ID="$(cat /etc/cros_boardname)"
+    BOARD_ID_ARG="$(cat /etc/cros_boardname)"
+    BOARD_ID_SRC="file"
+fi
+
+echo "[AUTOMATON] Relaying detected console parameter: $TARGET_CONSOLE_ARG"
+echo "[AUTOMATON] Relaying detected board id from $BOARD_ID_SRC : $BOARD_ID"
+
+EXTRA_BOOT_ARGS=""
+
+if [ "$BOARD_ID" = "grunt" ]; then # this might be useful later, but make sure to set them up individually?: || [ "$BOARD_ID" = "zork" ] || [ "$BOARD_ID" = "treeya" ]
+    # --- PHASE 1: GPU BRAIN-WIPE ---
+    echo "[AUTOMATON] Forcing GPU PCI Reset to clear dirty RMA state for $BOARD_ID..."
+    if [ -d /sys/bus/pci/devices/0000:00:01.0 ]; then
+        echo "0000:00:01.0" > /sys/bus/pci/drivers/amdgpu/unbind 2>/dev/null || true
+        echo 1 > /sys/bus/pci/devices/0000:00:01.0/reset 2>/dev/null || true
+        echo "[AUTOMATON] GPU reset pulse sent!"
+    else
+        echo "[AUTOMATON] Warning: GPU 0000:00:01.0 not found!"
+    fi
+
+    # Phase 2: construct boot args to make apuart console work for AMD boards
+    EXTRA_BOOT_ARGS="earlycon=uart8250,mmio32,0xfedc6000,4430n8 console=uart8250,mmio32,0xfedc6000,4430n8 keep_bootcon ignore_loglevel board_id=$BOARD_ID"
 fi
 
 # Load the final kernel natively using kexec-tools
-# Added the "Kitchen Sink" AMDGPU stability parameters and stripped nomodeset
 /sbin/kexec -l /payload/bzImage \
     --initrd=/payload/initramfs.cpio.gz \
-    --command-line="console=tty0 console=$TARGET_TTY $TARGET_CONSOLE_ARG root=/dev/ram0 rw debug earlyprintk=serial,ttyS0,115200 loglevel=8 initcall_debug cros_debug cros_secure=0 reset_devices i8042.reset i8042.nomux amdgpu.sg_display=0 amdgpu.runpm=0 amdgpu.aspm=0 amdgpu.dc=0 amdgpu.dpm=0 amdgpu.bapm=0 amdgpu.audio=0 video=efifb:off video=vesafb:off video=simplefb:off sysfb_disable=1 drm.debug=0x1e"
+    --command-line="console=tty0 console=$TARGET_TTY $TARGET_CONSOLE_ARG root=/dev/ram0 rw debug loglevel=8 initcall_debug reset_devices amdgpu.sg_display=0 amdgpu.runpm=0 amdgpu.aspm=0 amdgpu.dc=0 amdgpu.dpm=0 amdgpu.bapm=0 amdgpu.audio=0 video=efifb:off video=vesafb:off video=simplefb:off sysfb_disable=1 drm.debug=0x1e $EXTRA_BOOT_ARGS"
 
 # Execute the native handoff (this properly shuts down the UART!)
 echo "[AUTOMATON] Executing native kexec jump NOW."

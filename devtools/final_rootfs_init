@@ -7,11 +7,6 @@ mount -t sysfs none /sys
 mount -t devtmpfs none /dev 2>/dev/null || true
 mount -t devpts none /dev/pts 2>/dev/null || true
 
-# Redirect standard descriptors to the GSC serial console for visibility
-exec 0</dev/ttyS0
-exec 1>/dev/ttyS0
-exec 2>/dev/ttyS0
-
 echo "===================================================="
 echo "   [CCD SERIAL BOOT] FINAL TARGET KERNEL REACHED    "
 echo "===================================================="
@@ -36,4 +31,4 @@ echo "   WELCOME TO THE LIVE DIAGNOSTIC SERIAL SHELL"
 echo "===================================================="
 echo ""
 
-exec setsid cttyhack /bin/sh || exec sh -i </dev/ttyS0 >/dev/ttyS0 2>&1
+exec setsid cttyhack /bin/sh
