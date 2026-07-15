@@ -69,6 +69,13 @@ else
     echo "  [-] WARNING: Missing source file $WORKSPACE/LICENSE"
 fi
 
+echo "[*] Step 2.5.2: Deploying /etc/cros_boardname info..."
+mkdir -p "$WORKSPACE/final_rootfs_busybox/_install/etc/"
+echo $BOARD > $WORKSPACE/final_rootfs_busybox/_install/etc/cros_boardname
+mkdir -p "$WORKSPACE/busybox/_install/etc/"
+echo $BOARD > $WORKSPACE/busybox/_install/etc/cros_boardname
+echo "  [+] /etc/cros_boardname installed."
+
 # 3. Pack the final rootfs archive (Cleaned-up pack_final_rootfs.sh logic)
 echo "[*] Step 3: Packing final target rootfs archive..."
 if [ -d "$WORKSPACE/final_rootfs_busybox/_install" ]; then
