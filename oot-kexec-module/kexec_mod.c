@@ -25,6 +25,7 @@
 #include <linux/highmem.h>
 #include <linux/kallsyms.h>
 #include <linux/screen_info.h>
+#include <linux/delay.h>
 #include <asm/io.h>
 #include <asm/pgtable.h>
 
@@ -81,6 +82,7 @@ static void (*ptr_smp_send_stop)(void) = NULL;
 static void (*ptr_native_stop_other_cpus)(int wait) = NULL; /* Fallback SMP stopper */
 static void (*ptr_lapic_shutdown)(void) = NULL;
 static struct screen_info *ptr_screen_info = NULL;
+static unsigned long *ptr_sme_me_mask = NULL;
 
 /* Guard flag to ensure the initialization runs exactly once */
 static int oot_kexec_initialized = 0;
@@ -327,6 +329,12 @@ static void execute_trampoline(void)
     struct trampoline_control *ctrl;
     unsigned long jump_target;
 
+    unsigned long sme_mask = 0;
+    if (ptr_sme_me_mask) {
+        sme_mask = *ptr_sme_me_mask;
+        if (sme_mask) printk(KERN_EMERG "kexec: AMD SME enabled! Applying C-bit mask: 0x%lx\n", sme_mask);
+    }
+
     /* --- ADVANCED DYNAMIC MEMORY CALCULATOR ---
      * Scan the active system's E820 tables to calculate the highest usable memory address.
      * This dynamically configures our translation page directories without allocating unneeded pages.
@@ -380,7 +388,7 @@ static void execute_trampoline(void)
     
     asm volatile("mov %%cr3, %0" : "=r" (cr3_phys));
     asm volatile("mov %%cr4, %0" : "=r" (cr4_val));
-    cr3_phys &= ~0xFFFUL; /* Mask out PCID bits */
+    cr3_phys = (cr3_phys & ~0xFFFUL) | sme_mask; /* Mask out PCID bits */
 
     /* Pre-allocate a 5-level paging transition page if 5-level paging (LA57) is enabled */
     if (cr4_val & (1 << 12)) { 
@@ -411,9 +419,11 @@ static void execute_trampoline(void)
      */
     for (i = 0; i < num_pmds; i++) {
         for (j = 0; j < 512; j++) {
-            pmds[i][j] = ((i * 0x40000000ULL) + (j * 0x200000ULL)) | 0x83; /* Present, Read/Write, HugePage */
+            /* Append | sme_mask */
+            pmds[i][j] = ((i * 0x40000000ULL) + (j * 0x200000ULL)) | sme_mask | 0x83;
         }
-        pud[i] = virt_to_phys(pmds[i]) | 0x3; /* Present, Read/Write */
+        /* Append | sme_mask */
+        pud[i] = virt_to_phys(pmds[i]) | sme_mask | 0x3;
     }
 
     /* Populate the trampoline control block parameters (placed at the start of low_page_virt) */
@@ -590,6 +600,10 @@ static long kexec_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
                 printk(KERN_EMERG "kexec: CRITICAL WARNING! No SMP stop function found! Core 1 may cause MCE.\n");
             }
             
+            printk(KERN_EMERG "kexec: Waiting for secondary cores to halt...\n");
+            mdelay(100);
+            
+            
             // if (ptr_syscore_shutdown) ptr_syscore_shutdown();
 
             execute_trampoline();
@@ -628,6 +642,7 @@ int run_hijacked_initialization(void)
 
     printk(KERN_EMERG "kexec: Hijack trigger received. Initializing custom kexec module...\n");
 
+    /* Resolve all symbols */
     ptr_device_shutdown = (void *)kallsyms_lookup_name("device_shutdown");
     ptr_syscore_shutdown = (void *)kallsyms_lookup_name("syscore_shutdown");
     ptr_migrate_to_reboot_cpu = (void *)kallsyms_lookup_name("migrate_to_reboot_cpu");
@@ -635,24 +650,36 @@ int run_hijacked_initialization(void)
     ptr_native_stop_other_cpus = (void *)kallsyms_lookup_name("native_stop_other_cpus");
     ptr_lapic_shutdown = (void *)kallsyms_lookup_name("lapic_shutdown");
     ptr_screen_info = (struct screen_info *)kallsyms_lookup_name("screen_info");
+    
+    /* Resolve SME mask for AMD architecture */
+    ptr_sme_me_mask = (unsigned long *)kallsyms_lookup_name("sme_me_mask");
 
-    if (!ptr_device_shutdown) printk(KERN_EMERG "kexec: device_shutdown symbol missing!\n");
-    if (!ptr_syscore_shutdown) printk(KERN_EMERG "kexec: syscore_shutdown symbol missing!\n");
-    if (!ptr_migrate_to_reboot_cpu) printk(KERN_EMERG "kexec: migrate_to_reboot_cpu symbol missing!\n");
-    if (!ptr_smp_send_stop) printk(KERN_EMERG "kexec: smp_send_stop symbol missing!\n");
-
-    if (!ptr_smp_send_stop && !ptr_native_stop_other_cpus) {
-        printk(KERN_EMERG "kexec: WARNING - Secondary cores cannot be halted! Pivot may be unstable.\n");
-    }
-
+    /* --- Comprehensive Symbol Logging --- */
+    if (!ptr_device_shutdown) printk(KERN_WARNING "kexec: device_shutdown symbol missing!\n");
+    if (!ptr_syscore_shutdown) printk(KERN_WARNING "kexec: syscore_shutdown symbol missing!\n");
+    if (!ptr_migrate_to_reboot_cpu) printk(KERN_WARNING "kexec: migrate_to_reboot_cpu symbol missing!\n");
+    if (!ptr_lapic_shutdown) printk(KERN_WARNING "kexec: lapic_shutdown symbol missing!\n");
+    
     if (!ptr_screen_info) {
-        printk(KERN_EMERG "kexec: screen_info not found. Display might be corrupted after pivot.\n");
+        printk(KERN_WARNING "kexec: screen_info not found. Display might be corrupted after pivot.\n");
     }
 
-    /* Force the zero page to be allocated above 16MB boundary 
-     * BARE-METAL UPGRADE: Enforce GFP_DMA32 on physical memory allocation bounds to prevent 
-     * address truncation registers during mode pivot.
-     */
+    if (!ptr_sme_me_mask) {
+        printk(KERN_INFO "kexec: sme_me_mask symbol missing. (Normal if SME is disabled or non-AMD CPU).\n");
+    }
+
+    /* --- SMP Stop Logic Logging --- */
+    if (!ptr_smp_send_stop) {
+        printk(KERN_WARNING "kexec: smp_send_stop symbol missing! Falling back to native_stop_other_cpus.\n");
+    }
+    if (!ptr_native_stop_other_cpus) {
+        printk(KERN_WARNING "kexec: native_stop_other_cpus symbol missing!\n");
+    }
+    if (!ptr_smp_send_stop && !ptr_native_stop_other_cpus) {
+        printk(KERN_EMERG "kexec: CRITICAL WARNING - Secondary cores cannot be halted! Pivot may be unstable.\n");
+    }
+
+    /* Force the zero page to be allocated above 16MB boundary */
     zero_page_virt = (void *)get_safe_high_page(GFP_DMA32 | __GFP_ZERO);
     if (!zero_page_virt) {
         printk(KERN_EMERG "kexec: Failed to allocate zero page.\n");
@@ -670,7 +697,6 @@ int run_hijacked_initialization(void)
     printk(KERN_EMERG "kexec: Module loaded successfully. Device node created.\n");
     return 0;
 }
-
 /* * Parameter Setter Hijack Wrapper.
  * This function handles parameter parsing during finit_module.
  * It executes our core module setup sequence natively within Ring 0.
