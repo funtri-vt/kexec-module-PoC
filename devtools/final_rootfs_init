@@ -33,7 +33,7 @@ echo "[*] Launching getty on the active console..."
 # 4. Launch the shell using GETTY
 # Note: We pass 'console' without the /dev/ prefix.
 while true; do
-    setsid getty -L -n -l /bin/sh 115200 console vt100
+    setsid getty -L -n -l /bin/sh 0 console vt100
 
     echo "[-] FATAL: getty exited or crashed. Restarting in 1 second..."
     sleep 1
