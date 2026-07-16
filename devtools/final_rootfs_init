@@ -7,10 +7,8 @@ mount -t sysfs none /sys
 mount -t devtmpfs none /dev 2>/dev/null || true
 mount -t devpts none /dev/pts 2>/dev/null || true
 
-# 2. Redirect standard I/O to the console
-# Since the kernel started /init with closed FDs (no static /dev/console on disk),
-# we must explicitly attach stdout, stderr, and stdin to /dev/console now that devtmpfs is up.
-exec </dev/console >/dev/console 2>&1
+# 2. Hard bind to the smart serial port
+exec </dev/ttyS0 >/dev/ttyS0 2>&1
 
 echo "===================================================="
 echo "   [CCD SERIAL BOOT] FINAL TARGET KERNEL REACHED    "
@@ -32,8 +30,6 @@ echo "===================================================="
 echo ""
 
 # Wrap in an infinite loop so PID 1 never exits and panics.
-# Using 'setsid cttyhack /bin/sh' will now give a fully functional,
-# interactive controlling terminal with job control (Ctrl+C, etc.) on the UART.
 while true; do
     setsid cttyhack /bin/sh
     echo "[-] Shell exited or dropped. Restarting in 1 second..."
