@@ -7,32 +7,35 @@ mount -t sysfs none /sys
 mount -t devtmpfs none /dev 2>/dev/null || true
 mount -t devpts none /dev/pts 2>/dev/null || true
 
+# 2. Redirect standard I/O to the console
+# Since the kernel started /init with closed FDs (no static /dev/console on disk),
+# we must explicitly attach stdout, stderr, and stdin to /dev/console now that devtmpfs is up.
+exec </dev/console >/dev/console 2>&1
+
 echo "===================================================="
 echo "   [CCD SERIAL BOOT] FINAL TARGET KERNEL REACHED    "
 echo "===================================================="
 echo "[*] System identity: $(hostname 2>/dev/null || echo "headless-stoney")"
 echo "[*] Direct serial console active. Ready for live debugging."
 
-# 2. Setup Environment
+# 3. Setup Environment
 export PATH="/bin:/sbin:/usr/bin:/usr/sbin"
 export HOME="/"
 export TERM="linux"
 export PS1="Final-Serial# "
 
-# 3. Clear any stale serial line settings to ensure clean input/output
-stty -F /dev/ttyS0 clocal sane 2>/dev/null || true
-
 # 4. Launch the shell!
-# We attempt cttyhack first as it establishes a true controlling terminal.
-# We bind explicitly to the serial hardware device.
 echo ""
 echo "===================================================="
 echo "   WELCOME TO THE LIVE DIAGNOSTIC SERIAL SHELL"
 echo "===================================================="
 echo ""
 
+# Wrap in an infinite loop so PID 1 never exits and panics.
+# Using 'setsid cttyhack /bin/sh' will now give a fully functional,
+# interactive controlling terminal with job control (Ctrl+C, etc.) on the UART.
 while true; do
-    setsid /bin/sh -c 'exec /bin/sh </dev/console >/dev/console 2>&1'
-    echo "Shell exited/dropped, respawning..."
+    setsid cttyhack /bin/sh
+    echo "[-] Shell exited or dropped. Restarting in 1 second..."
     sleep 1
 done
