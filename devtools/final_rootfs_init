@@ -31,4 +31,8 @@ echo "   WELCOME TO THE LIVE DIAGNOSTIC SERIAL SHELL"
 echo "===================================================="
 echo ""
 
-exec setsid cttyhack /bin/sh
+while true; do
+    setsid /bin/sh -c 'exec /bin/sh </dev/console >/dev/console 2>&1'
+    echo "Shell exited/dropped, respawning..."
+    sleep 1
+done
