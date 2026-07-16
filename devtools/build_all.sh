@@ -215,6 +215,13 @@ else
     ./scripts/config --module CONFIG_CFG80211
     ./scripts/config --module CONFIG_MAC80211
 
+    #grunt 8250 serial drivers and stuff
+    ./scripts/config --enable CONFIG_SERIAL_8250
+    ./scripts/config --enable CONFIG_SERIAL_8250_CONSOLE
+    ./scripts/config --enable CONFIG_SERIAL_8250_PCI
+    ./scripts/config --enable CONFIG_SERIAL_8250_ACPI
+    ./scripts/config --enable CONFIG_SERIAL_8250_DW
+
     # Common Chromebook Wi-Fi Drivers
     # grunt wifi drivers
     ./scripts/config --module CONFIG_ATH10K
