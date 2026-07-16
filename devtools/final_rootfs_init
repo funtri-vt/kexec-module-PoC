@@ -7,14 +7,16 @@ mount -t sysfs none /sys
 mount -t devtmpfs none /dev 2>/dev/null || true
 mount -t devpts none /dev/pts 2>/dev/null || true
 
-# 2. Hard bind to the smart serial port
-exec </dev/console >/dev/console 2>&1
+# 2. The God-Mode Debug Hack: Route all script stdout/stderr to the kernel log!
+# This bypasses the TTY entirely for our debug echoes. 
+# They will print via the bare-metal 'earlycon' panic logger.
+exec >/dev/kmsg 2>&1
 
 echo "===================================================="
 echo "   [CCD SERIAL BOOT] FINAL TARGET KERNEL REACHED    "
 echo "===================================================="
 echo "[*] System identity: $(hostname 2>/dev/null || echo "headless-stoney")"
-echo "[*] Direct serial console active. Ready for live debugging."
+echo "[*] Essential filesystems mounted successfully."
 
 # 3. Setup Environment
 export PATH="/bin:/sbin:/usr/bin:/usr/sbin"
@@ -22,16 +24,17 @@ export HOME="/"
 export TERM="linux"
 export PS1="Final-Serial# "
 
-# 4. Launch the shell!
-echo ""
-echo "===================================================="
-echo "   WELCOME TO THE LIVE DIAGNOSTIC SERIAL SHELL"
-echo "===================================================="
-echo ""
+echo "[*] Bypassing Carrier Detect and forcing serial pipe open..."
 
-# Wrap in an infinite loop so PID 1 never exits and panics.
+# 4. Launch the shell using GETTY!
+# getty is specifically designed to handle serial lines properly.
+# -L: Local line (forces the kernel to ignore the missing DCD carrier pin)
+# -n: Do not prompt for login (we want root immediately)
+# -l: Specify the exact program to spawn (our shell)
 while true; do
-    setsid cttyhack /bin/sh
-    echo "[-] Shell exited or dropped. Restarting in 1 second..."
+    setsid getty -L -n -l /bin/sh 115200 /dev/ttyS0 vt100
+    
+    # If getty fails (e.g. ttyS0 doesn't exist), this will print to the kernel log!
+    echo "[-] FATAL: getty exited or crashed. Restarting in 1 second..."
     sleep 1
 done
