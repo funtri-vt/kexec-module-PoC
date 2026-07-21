@@ -36,6 +36,8 @@ if [ "$board_id" = "grunt" ]; then
     /bin/custom_setserial /dev/ttyS0 -t 16550A -o MEM32 -m 0xfedc6000 -s 2 -b 3000000 > /mnt/stateful/custom_setserial_result.txt 2>&1
     sync
 
+    sleep 5
+
     umount /mnt/stateful
     
     # Enable kernel sysrq (if the knob exists)
