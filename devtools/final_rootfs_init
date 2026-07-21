@@ -23,7 +23,7 @@ export PS1="Final-Serial# "
 
 if [ "$board_id" = "grunt" ]; then
     echo "[*] DIAGNOSTICS: Forcing ttyS0 hardware map via setserial"
-    setserial /dev/ttyS0 uart 16550A port 0 irq 0 iomem_base 0xfedc6000 iomem_reg_shift 2 baud_base 3000000
+    /bin/custom_setserial /dev/ttyS0 -t 16550A -o MEM32 -m 0xfedc6000 -s 2 -b 3000000
 fi
 
 cat /proc/tty/driver/serial
@@ -31,8 +31,7 @@ cat /proc/tty/driver/serial
 
 echo "[*] Launching getty on the active console..."
 
-# 4. Launch the shell using GETTY
-# Note: We pass 'console' without the /dev/ prefix.
+# getty will now use the freshly mapped ttyS0 with a 115200 baud rate!
 while true; do
     setsid getty -L -n -l /bin/sh 115200 /dev/ttyS0 vt100
 

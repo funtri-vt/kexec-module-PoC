@@ -76,6 +76,10 @@ mkdir -p "$WORKSPACE/busybox/_install/etc/"
 echo $BOARD > $WORKSPACE/busybox/_install/etc/cros_boardname
 echo "  [+] /etc/cros_boardname installed."
 
+echo "[*] Step 2.5.3: Deploying custom_setserial binary"
+mkdir -p "$WORKSPACE/final_rootfs_busybox/_install/bin"
+cp "$WORKSPACE/custom_setserial/custom_setserial" "$WORKSPACE/final_rootfs_busybox/_install/bin/custom_setserial"
+
 # 3. Pack the final rootfs archive (Cleaned-up pack_final_rootfs.sh logic)
 echo "[*] Step 3: Packing final target rootfs archive..."
 if [ -d "$WORKSPACE/final_rootfs_busybox/_install" ]; then

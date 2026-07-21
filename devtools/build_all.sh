@@ -296,6 +296,8 @@ echo "=========================================================="
 cd "$WORKSPACE/usermode"
 gcc -static -o custom_kexec custom_kexec.c 
 gcc -static -o finit_loader finit_loader.c
+cd "$WORKSPACE/custom_setserial"
+gcc -static -o custom_setserial custom_setserial.c
 
 # --- PHASE 8.5: FIRMWARE ACQUISITION ---
 echo ">>> [Phase 8.5] Injecting Proprietary Firmware Blobs..."
