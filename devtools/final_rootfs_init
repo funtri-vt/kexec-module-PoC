@@ -25,12 +25,26 @@ if [ "$board_id" = "grunt" ]; then
     echo "[*] DIAGNOSTICS: Checking physical memory locks on the UART..."
     cat /proc/iomem | grep -i fedc
 
-    echo "[*] DIAGNOSTICS: Forcing ttyS0 hardware map via custom_setserial"
-    /bin/custom_setserial /dev/ttyS0 -t 16550A -o MEM32 -m 0xfedc6000 -s 2 -b 3000000
+    # Mount the physical drive
+    mkdir -p /mnt/stateful
+    mount /dev/sda4 /mnt/stateful 2>/dev/null
+
+    # Dump the entire kernel ring buffer (which contains the blind logs!)
+    dmesg > /mnt/stateful/blind_boot_dmesg.txt
+
+    # Dump the output of our C program to see if it finally beat the EBUSY lock
+    /bin/custom_setserial /dev/ttyS0 -t 16550A -o MEM32 -m 0xfedc6000 -s 2 -b 3000000 > /mnt/stateful/custom_setserial_result.txt 2>&1
+
+    umount /mnt/stateful
+    
+    # Enable kernel sysrq (if the knob exists)
+    echo 1 > /proc/sys/kernel/sysrq 2>/dev/null
+
+    # Trigger reboot (SysRq "b")
+    echo b > /proc/sysrq-trigger
 fi
 
 cat /proc/tty/driver/serial
-
 
 echo "[*] Launching getty on the active console..."
 
