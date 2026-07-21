@@ -27,6 +27,7 @@ if [ "$board_id" = "grunt" ]; then
 
     # Mount the physical drive
     mkdir -p /mnt/stateful
+    sleep 5
     mount /dev/sda4 /mnt/stateful 2>/dev/null
 
     # Dump the entire kernel ring buffer (which contains the blind logs!)
