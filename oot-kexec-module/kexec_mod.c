@@ -420,19 +420,26 @@ static void execute_trampoline(void)
      */
     for (i = 0; i < num_pmds; i++) {
         for (j = 0; j < 512; j++) {
-            uint64_t phys_addr = (i * 0x40000000ULL) + (j * 0x200000ULL);
+            uint64_t phys_start = (i * 0x40000000ULL) + (j * 0x200000ULL);
+            uint64_t phys_end = phys_start + 0x200000ULL;
             uint64_t entry_sme = sme_mask;
 
-            /* Strip C-bit ONLY from the 2MB pages holding our plaintext payloads */
-            if (phys_addr == (low_page_phys & ~0x1FFFFFULL) ||
-                phys_addr == (zero_page_phys & ~0x1FFFFFULL) ||
-                phys_addr == (0x100000 & ~0x1FFFFFULL) ||
-                phys_addr == (0x10000 & ~0x1FFFFFULL) ||
-                (loaded_initrd.size > 0 && phys_addr == (initrd_phys_dest & ~0x1FFFFFULL))) {
+            uint64_t kernel_start = 0x100000;
+            uint64_t kernel_end = kernel_start + (loaded_kernel.size - kernel_pm_offset);
+
+            /* Strip C-bit from ANY 2MB PMD that overlaps with decrypted targets to prevent MCEs */
+            if ((low_page_phys >= phys_start && low_page_phys < phys_end) ||
+                (zero_page_phys >= phys_start && zero_page_phys < phys_end) ||
+                (0x10000 >= phys_start && 0x10000 < phys_end) ||
+                (kernel_end > phys_start && kernel_start < phys_end) ||
+                (loaded_initrd.size > 0 &&
+                 (initrd_phys_dest + loaded_initrd.size) > phys_start &&
+                 initrd_phys_dest < phys_end)) {
+
                 entry_sme = 0;
             }
 
-            pmds[i][j] = phys_addr | entry_sme | 0x83;
+            pmds[i][j] = phys_start | entry_sme | 0x83;
         }
         /* Append | sme_mask */
         pud[i] = virt_to_phys(pmds[i]) | sme_mask | 0x3;
