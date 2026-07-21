@@ -28,6 +28,7 @@
 #include <linux/delay.h>
 #include <asm/io.h>
 #include <asm/pgtable.h>
+#include <asm/set_memory.h>
 
 /* Use the relative path as specified by the synchronized directory layout */
 #include "../kexec_ioctl.h"
@@ -419,8 +420,19 @@ static void execute_trampoline(void)
      */
     for (i = 0; i < num_pmds; i++) {
         for (j = 0; j < 512; j++) {
-            /* Append | sme_mask */
-            pmds[i][j] = ((i * 0x40000000ULL) + (j * 0x200000ULL)) | sme_mask | 0x83;
+            uint64_t phys_addr = (i * 0x40000000ULL) + (j * 0x200000ULL);
+            uint64_t entry_sme = sme_mask;
+
+            /* Strip C-bit ONLY from the 2MB pages holding our plaintext payloads */
+            if (phys_addr == (low_page_phys & ~0x1FFFFFULL) ||
+                phys_addr == (zero_page_phys & ~0x1FFFFFULL) ||
+                phys_addr == (0x100000 & ~0x1FFFFFULL) ||
+                phys_addr == (0x10000 & ~0x1FFFFFULL) ||
+                (loaded_initrd.size > 0 && phys_addr == (initrd_phys_dest & ~0x1FFFFFULL))) {
+                entry_sme = 0;
+            }
+
+            pmds[i][j] = phys_addr | entry_sme | 0x83;
         }
         /* Append | sme_mask */
         pud[i] = virt_to_phys(pmds[i]) | sme_mask | 0x3;
@@ -434,6 +446,26 @@ static void execute_trampoline(void)
     /* Copy our compiled position-independent assembly template right after the control block */
     trampoline_size = (size_t)(trampoline_end - trampoline_start);
     memcpy((void *)(low_page_virt + 32), (void *)trampoline_start, trampoline_size);
+
+    /* --- BARE-METAL UPGRADE: AMD SME TARGET DECRYPTION --- */
+    if (ptr_sme_me_mask && *ptr_sme_me_mask) {
+        size_t kernel_pages = (loaded_kernel.size - kernel_pm_offset + PAGE_SIZE_4K - 1) / PAGE_SIZE_4K;
+
+        printk(KERN_EMERG "kexec: AMD SME active. Stripping C-bits from destination targets...\n");
+
+        /* Decrypt trampoline and zero page */
+        set_memory_decrypted(low_page_virt, 1);
+        set_memory_decrypted((unsigned long)zero_page_virt, 1);
+
+        /* Decrypt low memory targets (0x10000 cmdline, 0x100000 kernel) */
+        set_memory_decrypted((unsigned long)phys_to_virt(0x10000), 1);
+        set_memory_decrypted((unsigned long)phys_to_virt(0x100000), kernel_pages);
+
+        /* Decrypt initrd destination if present */
+        if (loaded_initrd.size > 0) {
+            set_memory_decrypted((unsigned long)phys_to_virt(initrd_phys_dest), loaded_initrd.nr_pages);
+        }
+    }
 
     /* --- PHASE 2: SYSTEM TEARDOWN --- */
     printk(KERN_EMERG "kexec: Quiescing core systems...\n");
@@ -490,13 +522,13 @@ static void execute_trampoline(void)
     }
 
     /* --- PHASE 4: INJECT IDENTITY MAP & JUMP (NO dynamic allocations allowed here!) --- */
-    pgd = (unsigned long *)phys_to_virt(cr3_phys);
-    
-    if (p4d) { 
-        p4d[0] = virt_to_phys(pud) | 0x3;
-        pgd[0] = virt_to_phys(p4d) | 0x3;
+    /* Ensure phys_to_virt doesn't ingest the C-bit from cr3_phys */
+    pgd = (unsigned long *)phys_to_virt(cr3_phys & ~sme_mask);
+    if (p4d) {
+        p4d[0] = virt_to_phys(pud) | sme_mask | 0x3;
+        pgd[0] = virt_to_phys(p4d) | sme_mask | 0x3;
     } else {
-        pgd[0] = virt_to_phys(pud) | 0x3;
+        pgd[0] = virt_to_phys(pud) | sme_mask | 0x3;
     }
 
     asm volatile("mov %0, %%cr3" :: "r" (cr3_phys) : "memory");
