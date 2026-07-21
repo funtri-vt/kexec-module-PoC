@@ -22,7 +22,10 @@ export TERM="linux"
 export PS1="Final-Serial# "
 
 if [ "$board_id" = "grunt" ]; then
-    echo "[*] DIAGNOSTICS: Forcing ttyS0 hardware map via setserial"
+    echo "[*] DIAGNOSTICS: Checking physical memory locks on the UART..."
+    cat /proc/iomem | grep -i fedc
+
+    echo "[*] DIAGNOSTICS: Forcing ttyS0 hardware map via custom_setserial"
     /bin/custom_setserial /dev/ttyS0 -t 16550A -o MEM32 -m 0xfedc6000 -s 2 -b 3000000
 fi
 
