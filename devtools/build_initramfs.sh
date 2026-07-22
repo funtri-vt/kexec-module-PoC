@@ -196,13 +196,13 @@ if [ "$BOARD_ID" = "grunt" ]; then # this might be useful later, but make sure t
     fi
 
     # Phase 2: construct boot args to make apuart console work for AMD boards
-    EXTRA_BOOT_ARGS="earlycon=uart8250,mmio32,0xfedc6000,4430n8 ignore_loglevel board_id=$BOARD_ID console=ttyS0,115200"
+    EXTRA_BOOT_ARGS="earlycon=uart8250,mmio32,0xfedc6000,4430n8 ignore_loglevel board_id=$BOARD_ID console=ttyS0,115200 panic=10"
 fi
 
 # Load the final kernel natively using kexec-tools
 /sbin/kexec -l /payload/bzImage \
     --initrd=/payload/initramfs.cpio.gz \
-    --command-line="console=tty0 console=$TARGET_TTY $TARGET_CONSOLE_ARG root=/dev/ram0 rw debug loglevel=8 initcall_debug reset_devices amdgpu.sg_display=0 amdgpu.runpm=0 amdgpu.aspm=0 amdgpu.dc=0 amdgpu.dpm=0 amdgpu.bapm=0 amdgpu.audio=0 video=efifb:off video=vesafb:off video=simplefb:off sysfb_disable=1 drm.debug=0x1e $EXTRA_BOOT_ARGS"
+    --command-line="console=tty0 console=$TARGET_TTY $TARGET_CONSOLE_ARG root=/dev/ram0 rw debug loglevel=8 reset_devices amdgpu.sg_display=0 amdgpu.runpm=0 amdgpu.aspm=0 amdgpu.dc=0 amdgpu.dpm=0 amdgpu.bapm=0 amdgpu.audio=0 video=efifb:off video=vesafb:off video=simplefb:off sysfb_disable=1 drm.debug=0x1e $EXTRA_BOOT_ARGS"
 
 # Execute the native handoff (this properly shuts down the UART!)
 echo "[AUTOMATON] Executing native kexec jump NOW."
