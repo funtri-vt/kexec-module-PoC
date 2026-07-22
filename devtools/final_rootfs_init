@@ -15,8 +15,4 @@ export PS1="Final-Serial# "
 
 echo "[*] NATIVE DRIVER HACK ACTIVE. Launching getty on /dev/console..." > /dev/kmsg
 
-# /dev/console automatically routes to the active MMIO UART
-while true; do
-    setsid getty -L -n -l /bin/sh 0 /dev/console vt100
-    sleep 1
-done
+exec setsid cttyhack sh
