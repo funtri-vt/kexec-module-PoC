@@ -1,24 +1,56 @@
 --- ./drivers/tty/serial/8250/8250_dw.c.orig	2026-07-22 14:50:14.699345212 +0000
-+++ ./drivers/tty/serial/8250/8250_dw.c	2026-07-22 17:53:56.857367898 +0000
-@@ -608,9 +608,20 @@
++++ ./drivers/tty/serial/8250/8250_dw.c	2026-07-22 18:57:44.274336024 +0000
+@@ -515,6 +515,11 @@
+ 	struct resource *regs;
+ 	int err;
+ 
++	//force early overides for cros ccd
++	dev_warn(&pdev->dev, "[CCD HACK] Forcing early probe parameters for %s\n", dev_name(&pdev->dev));
++	pm_runtime_forbid(&pdev->dev);
++	pm_runtime_get_noresume(&pdev->dev);
++
+ 	regs = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+ 	if (!regs)
+ 		return dev_err_probe(dev, -EINVAL, "no registers defined\n");
+@@ -598,9 +603,15 @@
+ 	data->clk = devm_clk_get_optional_enabled(dev, "baudclk");
+ 	if (data->clk == NULL)
+ 		data->clk = devm_clk_get_optional_enabled(dev, NULL);
+-	if (IS_ERR(data->clk))
+-		return dev_err_probe(dev, PTR_ERR(data->clk),
+-				     "failed to get baudclk\n");
++
++	/* --- CCD HACK: INTERCEPT CLOCK ERROR --- */
++	if (IS_ERR(data->clk)) {
++		dev_warn(dev, "[CCD HACK] Ignoring ACPI clock error and forcing 48MHz!\n");
++		/* Nullify the broken pointer so the driver doesn't crash trying to read it later */
++		data->clk = NULL;
++		p->uartclk = 48000000;
++	}
++	/* --------------------------------------- */
+ 
+ 	INIT_WORK(&data->clk_work, dw8250_clk_work_cb);
+ 	data->clk_notifier.notifier_call = dw8250_clk_notifier_cb;
+@@ -608,9 +619,21 @@
  	if (data->clk)
  		p->uartclk = clk_get_rate(data->clk);
  
 -	/* If no clock rate is defined, fail. */
 -	if (!p->uartclk)
 -		return dev_err_probe(dev, -EINVAL, "clock rate not defined\n");
-+	/* If no clock rate is defined, default to 48MHz */
++	/* Fallback if clock was found but rate was 0 */
 +	if (!p->uartclk) {
-+		dev_warn(dev, "[CCD HACK] clock rate not defined, forcing 48MHz!\n");
++		dev_warn(dev, "[CCD HACK] clock rate is 0, forcing 48MHz!\n");
 +		p->uartclk = 48000000;
 +	}
 +
++	/* Force IRQ 11 for Grunt */
 +	if (p->irq <= 0) {
-+		dev_warn(dev, "[CCD HACK] IRQ not defined, forcing IRQ 11 for grunt!");
++		dev_warn(dev, "[CCD HACK] IRQ not defined, forcing IRQ 11!\n");
 +		p->irq = 11;
 +	}
 +
-+	// disable power management
++	/* Disable power management so the bus doesn't fault */
 +	pm_runtime_forbid(dev);
 +	pm_runtime_get_noresume(dev);
  
