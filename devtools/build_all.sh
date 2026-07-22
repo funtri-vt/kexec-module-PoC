@@ -199,6 +199,17 @@ else
         git clone --depth 1 -b "$FINAL_KERNEL_BRANCH" "$MAINLINE_KERNEL_REPO" "$FIN_KDIR"
     fi
     cd "$FIN_KDIR"
+    # --- DYNAMIC PATCHING ROUTINE ---
+    PATCH_DIR="$WORKSPACE/patches/$BOARD/final-kernel"
+    if [ -d "$PATCH_DIR" ]; then
+        echo "  [*] Applying board-specific final kernel patches for $BOARD..."
+        # Find all .patch files, sort them alphabetically, and apply them
+        find "$PATCH_DIR" -type f -name "*.patch" | sort | while read -r patch_file; do
+            echo "      -> Applying $(basename "$patch_file")..."
+            # -p1 strips the top-level directory, --forward prevents reverse-patching prompts if already applied
+            patch -p1 --forward -i "$patch_file" || echo "      [!] Note: Patch skipped (likely already applied)."
+        done
+    fi
     make defconfig
     
     # --- HARDWARE ENABLEMENT FOR DISPLAY & INPUT ---

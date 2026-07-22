@@ -1,0 +1,17 @@
+--- ./drivers/tty/serial/8250/8250_dw.c.orig	2026-07-22 14:50:14.699345212 +0000
++++ ./drivers/tty/serial/8250/8250_dw.c	2026-07-22 15:04:34.074379833 +0000
+@@ -608,9 +608,11 @@
+ 	if (data->clk)
+ 		p->uartclk = clk_get_rate(data->clk);
+ 
+-	/* If no clock rate is defined, fail. */
+-	if (!p->uartclk)
+-		return dev_err_probe(dev, -EINVAL, "clock rate not defined\n");
++	/* If no clock rate is defined, default to 48MHz */
++	if (!p->uartclk) {
++		dev_warn(dev, "[CCD HACK] clock rate not defined, forcing 48MHz!\n");
++		p->uartclk = 48000000;
++	}
+ 
+ 	data->pclk = devm_clk_get_optional_enabled(dev, "apb_pclk");
+ 	if (IS_ERR(data->pclk))
