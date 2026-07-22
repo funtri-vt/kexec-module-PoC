@@ -1,6 +1,6 @@
 --- ./drivers/tty/serial/8250/8250_dw.c.orig	2026-07-22 14:50:14.699345212 +0000
-+++ ./drivers/tty/serial/8250/8250_dw.c	2026-07-22 16:43:22.389869235 +0000
-@@ -608,9 +608,19 @@
++++ ./drivers/tty/serial/8250/8250_dw.c	2026-07-22 17:30:05.981310253 +0000
+@@ -608,9 +608,20 @@
  	if (data->clk)
  		p->uartclk = clk_get_rate(data->clk);
  
@@ -14,7 +14,8 @@
 +	}
 +
 +	if (p->irq <= 0) {
-+		p->irq = 3; //try 4 if this doesn't work
++		dev_warn(dev, "[CCD HACK] IRQ not defined, forcing IRQ 11 for grunt!")
++		p->irq = 11;
 +	}
 +
 +	// disable power management
