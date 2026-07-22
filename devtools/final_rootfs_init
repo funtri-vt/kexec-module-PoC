@@ -6,16 +6,17 @@ mount -t sysfs none /sys
 mount -t devtmpfs none /dev 2>/dev/null || true
 mount -t devpts none /dev/pts 2>/dev/null || true
 
-exec >/dev/kmsg 2>&1
+# Send early init messages to the kernel log
+echo "[*] Mounting filesystems..." > /dev/kmsg
 
 export PATH="/bin:/sbin:/usr/bin:/usr/sbin"
-export TERM="linux"
+export TERM="vt100"
 export PS1="Final-Serial# "
 
-echo "[*] NATIVE DRIVER HACK ACTIVE. Launching getty..."
+echo "[*] NATIVE DRIVER HACK ACTIVE. Launching getty on /dev/console..." > /dev/kmsg
 
-# Just launch getty. The kernel handles the rest.
+# /dev/console automatically routes to the active MMIO UART
 while true; do
-    setsid getty -L -n -l /bin/sh 115200 /dev/ttyS0 vt100
+    setsid getty -L -n -l /bin/sh 0 /dev/console vt100
     sleep 1
 done
