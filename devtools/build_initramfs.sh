@@ -196,7 +196,7 @@ if [ "$BOARD_ID" = "grunt" ]; then # this might be useful later, but make sure t
     fi
 
     # Phase 2: construct boot args to make apuart console work for AMD boards
-    EXTRA_BOOT_ARGS="earlycon=uart8250,mmio32,0xfedc6000,4430n8 ignore_loglevel board_id=$BOARD_ID console=ttyS0,115200 panic=10 keep_bootcon"
+    EXTRA_BOOT_ARGS="earlycon=uart8250,mmio32,0xfedc6000,4430n8 ignore_loglevel board_id=$BOARD_ID console=ttyS0,115200 panic=10 pm_async=0"
 fi
 
 # Load the final kernel natively using kexec-tools
