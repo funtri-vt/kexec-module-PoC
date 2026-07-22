@@ -1,6 +1,6 @@
 --- ./drivers/tty/serial/8250/8250_dw.c.orig	2026-07-22 14:50:14.699345212 +0000
-+++ ./drivers/tty/serial/8250/8250_dw.c	2026-07-22 15:04:34.074379833 +0000
-@@ -608,9 +608,11 @@
++++ ./drivers/tty/serial/8250/8250_dw.c	2026-07-22 16:43:22.389869235 +0000
+@@ -608,9 +608,19 @@
  	if (data->clk)
  		p->uartclk = clk_get_rate(data->clk);
  
@@ -12,6 +12,14 @@
 +		dev_warn(dev, "[CCD HACK] clock rate not defined, forcing 48MHz!\n");
 +		p->uartclk = 48000000;
 +	}
++
++	if (p->irq <= 0) {
++		p->irq = 3; //try 4 if this doesn't work
++	}
++
++	// disable power management
++	pm_runtime_forbid(dev);
++	pm_runtime_get_noresume(dev);
  
  	data->pclk = devm_clk_get_optional_enabled(dev, "apb_pclk");
  	if (IS_ERR(data->pclk))

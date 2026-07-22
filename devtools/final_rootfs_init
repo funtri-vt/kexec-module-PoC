@@ -1,61 +1,21 @@
 #!/bin/sh
 
-# 1. Mount essential filesystems
 mkdir -p /proc /sys /dev /dev/pts
 mount -t proc none /proc
 mount -t sysfs none /sys
 mount -t devtmpfs none /dev 2>/dev/null || true
 mount -t devpts none /dev/pts 2>/dev/null || true
 
-# 2. Route all script output to the kernel log
 exec >/dev/kmsg 2>&1
 
-echo "===================================================="
-echo "   [CCD SERIAL BOOT] FINAL TARGET KERNEL REACHED    "
-echo "===================================================="
-echo "[*] Essential filesystems mounted successfully."
-
-# 3. Setup Environment
 export PATH="/bin:/sbin:/usr/bin:/usr/sbin"
-export HOME="/"
 export TERM="linux"
 export PS1="Final-Serial# "
 
-if [ "$board_id" = "grunt" ]; then
-    echo "[*] DIAGNOSTICS: Checking physical memory locks on the UART..."
-    cat /proc/iomem | grep -i fedc
+echo "[*] NATIVE DRIVER HACK ACTIVE. Launching getty..."
 
-    # Mount the physical drive
-    mkdir -p /mnt/stateful
-    sleep 5
-    mount /dev/sda4 /mnt/stateful 2>/dev/null
-
-    # Dump the entire kernel ring buffer (which contains the blind logs!)
-    dmesg > /mnt/stateful/blind_boot_dmesg.txt
-
-    # Dump the output of our C program to see if it finally beat the EBUSY lock
-    /bin/custom_setserial /dev/ttyS0 -t 16550A -o MEM32 -m 0xfedc6000 -s 2 -b 3000000 > /mnt/stateful/custom_setserial_result.txt 2>&1
-    sync
-
-    sleep 5
-
-    umount /mnt/stateful
-    
-    # Enable kernel sysrq (if the knob exists)
-    echo 1 > /proc/sys/kernel/sysrq 2>/dev/null
-
-    # Trigger reboot (SysRq "b")
-    echo b > /proc/sysrq-trigger
-fi
-
-cat /proc/tty/driver/serial
-
-echo "[*] Launching getty on the active console..."
-
-# getty will now use the freshly mapped ttyS0 with a 115200 baud rate!
+# Just launch getty. The kernel handles the rest.
 while true; do
     setsid getty -L -n -l /bin/sh 115200 /dev/ttyS0 vt100
-
-    echo "[-] FATAL: getty exited or crashed. Restarting in 1 second..."
     sleep 1
 done
