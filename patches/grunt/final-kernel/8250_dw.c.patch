@@ -1,5 +1,5 @@
 --- ./drivers/tty/serial/8250/8250_dw.c.orig	2026-07-22 14:50:14.699345212 +0000
-+++ ./drivers/tty/serial/8250/8250_dw.c	2026-07-22 18:57:44.274336024 +0000
++++ ./drivers/tty/serial/8250/8250_dw.c	2026-07-23 18:33:46.230544458 +0000
 @@ -515,6 +515,11 @@
  	struct resource *regs;
  	int err;
@@ -31,7 +31,7 @@
  
  	INIT_WORK(&data->clk_work, dw8250_clk_work_cb);
  	data->clk_notifier.notifier_call = dw8250_clk_notifier_cb;
-@@ -608,9 +619,21 @@
+@@ -608,9 +619,18 @@
  	if (data->clk)
  		p->uartclk = clk_get_rate(data->clk);
  
@@ -44,11 +44,8 @@
 +		p->uartclk = 48000000;
 +	}
 +
-+	/* Force IRQ 11 for Grunt */
-+	if (p->irq <= 0) {
-+		dev_warn(dev, "[CCD HACK] IRQ not defined, forcing IRQ 11!\n");
-+		p->irq = 11;
-+	}
++	dev_warn(dev, "[CCD HACK] Forcing IRQ 0 (Polling Mode)!\n");
++	p->irq = 0;
 +
 +	/* Disable power management so the bus doesn't fault */
 +	pm_runtime_forbid(dev);
