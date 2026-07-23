@@ -1,5 +1,5 @@
 --- ./drivers/tty/serial/8250/8250_dw.c.orig	2026-07-22 14:50:14.699345212 +0000
-+++ ./drivers/tty/serial/8250/8250_dw.c	2026-07-23 18:33:46.230544458 +0000
++++ ./drivers/tty/serial/8250/8250_dw.c	2026-07-23 19:47:33.489439439 +0000
 @@ -515,6 +515,11 @@
  	struct resource *regs;
  	int err;
@@ -44,8 +44,8 @@
 +		p->uartclk = 48000000;
 +	}
 +
-+	dev_warn(dev, "[CCD HACK] Forcing IRQ 0 (Polling Mode)!\n");
-+	p->irq = 0;
++	// dev_warn(dev, "[CCD HACK] Forcing IRQ 0 (Polling Mode)!\n");
++	// p->irq = 0;
 +
 +	/* Disable power management so the bus doesn't fault */
 +	pm_runtime_forbid(dev);
