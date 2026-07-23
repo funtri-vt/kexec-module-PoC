@@ -6,23 +6,21 @@ mount -t sysfs none /sys
 mount -t devtmpfs none /dev 2>/dev/null || true
 mount -t devpts none /dev/pts 2>/dev/null || true
 
-# Send early init messages to the kernel log
-echo "[*] Mounting filesystems..." > /dev/kmsg
-
 export PATH="/bin:/sbin:/usr/bin:/usr/sbin"
 export TERM="vt100"
 export PS1="Final-Serial# "
 
-echo "[*] NATIVE DRIVER HACK ACTIVE. Launching getty on /dev/console..." > /dev/kmsg
+echo "[*] Setting clocal to bypass Carrier Detect..." > /dev/kmsg
+# Force the port to 115200 baud and disable modem control lines (clocal)
+stty -F /dev/ttyS0 115200 clocal
 
 # The immortal PID 1 loop
 while true; do
-    echo "[*] Sending test heartbeat to /dev/ttyS0..." > /dev/kmsg
+    echo "[*] Launching raw shell..." > /dev/kmsg
     
-    # Try to write directly to the device
-    echo "=====================================" > /dev/ttyS0
-    echo "  HELLO FROM THE USERSPACE INIT SCRIPT!  " > /dev/ttyS0
-    echo "=====================================" > /dev/ttyS0
+    # The Sledgehammer: Bind shell I/O directly to ttyS0
+    setsid sh -c 'exec sh </dev/ttyS0 >/dev/ttyS0 2>&1'
     
+    echo "Shell exited! Retrying in 3 seconds..." > /dev/kmsg
     sleep 3
 done
