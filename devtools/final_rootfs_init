@@ -17,11 +17,9 @@ echo "[*] NATIVE DRIVER HACK ACTIVE. Launching getty on /dev/console..." > /dev/
 
 # The immortal PID 1 loop
 while true; do
-    # We know ttyS0 is alive now, so we bind directly to it!
-    # 115200 baud, bypassing /dev/console magic.
-    setsid getty -L -n -l /bin/sh 115200 /dev/ttyS0 vt100
+    # The Sledgehammer: Bind shell I/O directly to ttyS0, bypassing getty
+    setsid sh -c 'exec sh </dev/ttyS0 >/dev/ttyS0 2>&1'
     
-    # If we get here, the shell exited
     echo "Shell exited! Retrying in 3 seconds..." > /dev/kmsg
     sleep 3
 done
