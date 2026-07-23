@@ -237,6 +237,9 @@ else
     ./scripts/config --enable CONFIG_PINCTRL
     ./scripts/config --enable CONFIG_PINCTRL_AMD
 
+    ./scripts/config --enable CONFIG_GPIOLIB
+    ./scripts/config --enable CONFIG_X86_AMD_PLATFORM_DEVICE
+
     # Common Chromebook Wi-Fi Drivers
     # grunt wifi drivers
     ./scripts/config --module CONFIG_ATH10K
