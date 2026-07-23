@@ -17,9 +17,12 @@ echo "[*] NATIVE DRIVER HACK ACTIVE. Launching getty on /dev/console..." > /dev/
 
 # The immortal PID 1 loop
 while true; do
-    # The Sledgehammer: Bind shell I/O directly to ttyS0, bypassing getty
-    setsid sh -c 'exec sh </dev/ttyS0 >/dev/ttyS0 2>&1'
+    echo "[*] Sending test heartbeat to /dev/ttyS0..." > /dev/kmsg
     
-    echo "Shell exited! Retrying in 3 seconds..." > /dev/kmsg
+    # Try to write directly to the device
+    echo "=====================================" > /dev/ttyS0
+    echo "  HELLO FROM THE USERSPACE INIT SCRIPT!  " > /dev/ttyS0
+    echo "=====================================" > /dev/ttyS0
+    
     sleep 3
 done
