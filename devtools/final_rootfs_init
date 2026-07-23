@@ -15,8 +15,8 @@ export PS1="Final-Serial# "
 
 echo "[*] NATIVE DRIVER HACK ACTIVE. Launching getty on /dev/console..." > /dev/kmsg
 
-exec setsid cttyhack sh 2>/dev/kmsg
 while true; do
-    echo "still alive"
+    setsid cttyhack sh
+    echo "still alive, setsid cttyhack sh crashed or ended early"
     sleep 10
 done
