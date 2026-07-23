@@ -233,6 +233,10 @@ else
     ./scripts/config --enable CONFIG_SERIAL_8250_ACPI
     ./scripts/config --enable CONFIG_SERIAL_8250_DW
 
+    # amd pinctrl drivers and stuff
+    ./scripts/config --enable CONFIG_PINCTRL
+    ./scripts/config --enable CONFIG_PINCTRL_AMD
+
     # Common Chromebook Wi-Fi Drivers
     # grunt wifi drivers
     ./scripts/config --module CONFIG_ATH10K
