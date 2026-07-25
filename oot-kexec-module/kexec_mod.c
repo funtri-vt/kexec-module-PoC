@@ -35,8 +35,8 @@
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("funtri-vt");
-MODULE_DESCRIPTION("Custom Out-of-Tree Kexec with Parameter Callback Hijack");
-MODULE_VERSION("7.0");
+MODULE_DESCRIPTION("Custom Out-of-Tree Kexec with Parameter Callback Hijack and Passing of kallsyms_lookup_name address");
+MODULE_VERSION("0.0.1-alpha");
 
 #define PAGE_SIZE_4K 4096
 
@@ -64,6 +64,13 @@ struct e820_entry {
 /* Declare the labels compiled inside our global assembly block */
 extern char trampoline_start[];
 extern char trampoline_end[];
+
+/* Declare the variable and register it as a module parameter */
+static unsigned long kallsyms_addr = 0;
+module_param(kallsyms_addr, ulong, 0444);
+
+/* Define a function pointer type that matches the signature of kallsyms_lookup_name */
+typedef unsigned long (*kallsyms_lookup_name_t)(const char *name);
 
 static char *kernel_cmdline = NULL;
 static struct scatter_buffer loaded_kernel = {NULL, NULL, 0, 0};
@@ -672,8 +679,9 @@ static struct miscdevice kexec_misc_device = {
  */
 int run_hijacked_initialization(void)
 {
+    kallsyms_lookup_name_t ptr_kallsyms_lookup_name;
     int ret;
-    
+
     if (oot_kexec_initialized) {
         return 0;
     }
@@ -681,17 +689,24 @@ int run_hijacked_initialization(void)
 
     printk(KERN_EMERG "kexec: Hijack trigger received. Initializing custom kexec module...\n");
 
-    /* Resolve all symbols */
-    ptr_device_shutdown = (void *)kallsyms_lookup_name("device_shutdown");
-    ptr_syscore_shutdown = (void *)kallsyms_lookup_name("syscore_shutdown");
-    ptr_migrate_to_reboot_cpu = (void *)kallsyms_lookup_name("migrate_to_reboot_cpu");
-    ptr_smp_send_stop = (void *)kallsyms_lookup_name("smp_send_stop");
-    ptr_native_stop_other_cpus = (void *)kallsyms_lookup_name("native_stop_other_cpus");
-    ptr_lapic_shutdown = (void *)kallsyms_lookup_name("lapic_shutdown");
-    ptr_screen_info = (struct screen_info *)kallsyms_lookup_name("screen_info");
-    
-    /* Resolve SME mask for AMD architecture */
-    ptr_sme_me_mask = (unsigned long *)kallsyms_lookup_name("sme_me_mask");
+    /* Safety check: ensure userspace actually passed the address */
+    if (kallsyms_addr == 0) {
+        printk(KERN_EMERG "kexec: CRITICAL - kallsyms_addr parameter was not provided by loader!\n");
+        return -EINVAL;
+    }
+
+    /* Cast the raw unsigned long into our callable function pointer */
+    ptr_kallsyms_lookup_name = (kallsyms_lookup_name_t)kallsyms_addr;
+
+    /* Resolve all symbols using custom pointer */
+    ptr_device_shutdown = (void *)ptr_kallsyms_lookup_name("device_shutdown");
+    ptr_syscore_shutdown = (void *)ptr_kallsyms_lookup_name("syscore_shutdown");
+    ptr_migrate_to_reboot_cpu = (void *)ptr_kallsyms_lookup_name("migrate_to_reboot_cpu");
+    ptr_smp_send_stop = (void *)ptr_kallsyms_lookup_name("smp_send_stop");
+    ptr_native_stop_other_cpus = (void *)ptr_kallsyms_lookup_name("native_stop_other_cpus");
+    ptr_lapic_shutdown = (void *)ptr_kallsyms_lookup_name("lapic_shutdown");
+    ptr_screen_info = (struct screen_info *)ptr_kallsyms_lookup_name("screen_info");
+    ptr_sme_me_mask = (unsigned long *)ptr_kallsyms_lookup_name("sme_me_mask");
 
     /* --- Comprehensive Symbol Logging --- */
     if (!ptr_device_shutdown) printk(KERN_WARNING "kexec: device_shutdown symbol missing!\n");

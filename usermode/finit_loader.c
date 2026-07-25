@@ -27,6 +27,36 @@
 #define __NR_finit_module 313
 #endif
 
+/* Helper to fetch the live memory address of a kernel symbol */
+unsigned long get_kallsyms_address(const char *target_symbol) {
+    FILE *fp = fopen("/proc/kallsyms", "r");
+    if (!fp) {
+        return 0; /* Failed to open */
+    }
+
+    char *line = NULL;
+    size_t len = 0;
+    unsigned long addr = 0;
+    char type;
+    char sym_name[256];
+    unsigned long found_addr = 0;
+
+    /* Read the file line by line */
+    while (getline(&line, &len, fp) != -1) {
+        /* Parse the hex address, symbol type, and symbol name */
+        if (sscanf(line, "%lx %c %255s", &addr, &type, sym_name) == 3) {
+            if (strcmp(sym_name, target_symbol) == 0) {
+                found_addr = addr;
+                break;
+            }
+        }
+    }
+
+    free(line);
+    fclose(fp);
+    return found_addr;
+}
+
 int main(int argc, char *argv[]) {
     if (argc < 2) {
         fprintf(stderr, "[-] Usage: %s <path_to_module.ko>\n", argv[0]);
@@ -45,13 +75,26 @@ int main(int argc, char *argv[]) {
 
     printf("[*] File opened successfully (FD: %d). Calling finit_module with trigger param...\n", fd);
 
-    /* * PASS IN THE PARAMETER TRIGGER:
-     * Instead of an empty string, we pass "trigger_init=1" as our loader argument.
-     * When finit_module maps the module, it immediately runs the 'trigger_init' 
-     * parameter callback block in Ring 0, bypassing the struct module offset table!
-     */
-    long rc = syscall(__NR_finit_module, fd, "trigger_init=1", 0);
-    
+    /* 1. Fetch the address */
+    unsigned long kallsyms_addr = get_kallsyms_address("kallsyms_lookup_name");
+    if (kallsyms_addr == 0) {
+        fprintf(stderr, "[-] Failed to find kallsyms_lookup_name in /proc/kallsyms. Are you root?\n");
+        close(fd);
+        return 1;
+    }
+    printf("[*] Found kallsyms_lookup_name at: 0x%lx\n", kallsyms_addr);
+
+
+    /* 2. Format the parameter string dynamically */
+    char param_buf[256];
+    /* IMPORTANT: kallsyms_addr must come before trigger_init=1 */
+    snprintf(param_buf, sizeof(param_buf), "kallsyms_addr=%lu trigger_init=1", kallsyms_addr);
+
+    printf("[*] Calling finit_module with params: '%s'\n", param_buf);
+
+    /* 3. Pass the buffer to the syscall instead of the hardcoded string */
+    long rc = syscall(__NR_finit_module, fd, param_buf, 0);
+
     if (rc != 0) {
         fprintf(stderr, "[-] finit_module failed: %s (errno: %d)\n", 
                 strerror(errno), errno);
