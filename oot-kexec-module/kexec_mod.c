@@ -452,14 +452,8 @@ static void execute_trampoline(void)
         pud[i] = virt_to_phys(pmds[i]) | sme_mask | 0x3;
     }
 
-    /* Populate the trampoline control block parameters (placed at the start of low_page_virt) */
-    ctrl = (struct trampoline_control *)low_page_virt;
-    ctrl->low_page_phys = low_page_phys;
-    ctrl->zero_page_phys = zero_page_phys;
-
     /* Copy our compiled position-independent assembly template right after the control block */
     trampoline_size = (size_t)(trampoline_end - trampoline_start);
-    memcpy((void *)(low_page_virt + 32), (void *)trampoline_start, trampoline_size);
 
     /* --- BARE-METAL UPGRADE: AMD SME TARGET DECRYPTION --- */
     if (ptr_sme_me_mask && *ptr_sme_me_mask) {
@@ -480,6 +474,15 @@ static void execute_trampoline(void)
             set_memory_decrypted((unsigned long)phys_to_virt(initrd_phys_dest), loaded_initrd.nr_pages);
         }
     }
+
+    /* Populate the trampoline control block parameters (placed at the start of low_page_virt) (moved to make sure we're writing to plaintext memory) */
+    ctrl = (struct trampoline_control *)low_page_virt;
+    ctrl->low_page_phys = low_page_phys;
+    ctrl->zero_page_phys = zero_page_phys;
+
+
+    //copy after setting decrypted
+    memcpy((void *)(low_page_virt + 32), (void *)trampoline_start, trampoline_size);
 
     /* --- PHASE 2: SYSTEM TEARDOWN --- */
     printk(KERN_EMERG "kexec: Quiescing core systems...\n");
