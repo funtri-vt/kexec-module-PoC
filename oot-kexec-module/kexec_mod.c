@@ -72,6 +72,8 @@ module_param(kallsyms_addr, ulong, 0444);
 /* Define a function pointer type that matches the signature of kallsyms_lookup_name */
 typedef unsigned long (*kallsyms_lookup_name_t)(const char *name);
 
+static kallsyms_lookup_name_t ptr_kallsyms_lookup_name = NULL;
+
 static char *kernel_cmdline = NULL;
 static struct scatter_buffer loaded_kernel = {NULL, NULL, 0, 0};
 static struct scatter_buffer loaded_initrd = {NULL, NULL, 0, 0};
@@ -248,8 +250,9 @@ static int setup_zero_page(void)
     kernel_setup = (unsigned char *)loaded_kernel.virt_addrs[0];
     memcpy(zp->setup_header, kernel_setup + 0x1f1, 0x9f); // Copy verified standard setup header size
 
+
     /* --- BARE-METAL UPGRADE: HOST E820 REPLICATION --- */
-    host_boot_params = (void *)kallsyms_lookup_name("boot_params");
+    host_boot_params = (void *)ptr_kallsyms_lookup_name("boot_params");
     if (host_boot_params) {
         memcpy(zp->e820_table, (unsigned char *)host_boot_params + 0x2d0, sizeof(zp->e820_table));
         zp->e820_entries = *(uint8_t *)((unsigned char *)host_boot_params + 0x1e8);
@@ -347,8 +350,9 @@ static void execute_trampoline(void)
      * Scan the active system's E820 tables to calculate the highest usable memory address.
      * This dynamically configures our translation page directories without allocating unneeded pages.
      */
+
     uint64_t max_physical_ram = 0x100000000ULL; /* Default fallback: 4 GB */
-    void *host_boot_params = (void *)kallsyms_lookup_name("boot_params");
+    void *host_boot_params = (void *)ptr_kallsyms_lookup_name("boot_params");
     if (host_boot_params) {
         uint8_t entries = *(uint8_t *)((unsigned char *)host_boot_params + 0x1e8);
         struct e820_entry *table = (struct e820_entry *)((unsigned char *)host_boot_params + 0x2d0);
@@ -463,8 +467,6 @@ static void execute_trampoline(void)
 
         /* Decrypt trampoline and zero page */
         set_memory_decrypted(low_page_virt, 1);
-        set_memory_decrypted((unsigned long)zero_page_virt, 1);
-
         /* Decrypt low memory targets (0x10000 cmdline, 0x100000 kernel) */
         set_memory_decrypted((unsigned long)phys_to_virt(0x10000), 1);
         set_memory_decrypted((unsigned long)phys_to_virt(0x100000), kernel_pages);
@@ -743,7 +745,7 @@ int run_hijacked_initialization(void)
         return -ENOMEM;
     }
     zero_page_phys = virt_to_phys(zero_page_virt);
-
+    set_memory_decrypted((unsigned long)zero_page_virt, 1);
     ret = misc_register(&kexec_misc_device);
     if (ret) {
         printk(KERN_EMERG "kexec: misc_register failed (%d)\n", ret);
