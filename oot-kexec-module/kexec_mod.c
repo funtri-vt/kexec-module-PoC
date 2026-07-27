@@ -508,10 +508,11 @@ static void execute_trampoline(void)
     printk(KERN_EMERG "kexec: Point of no return. Disabling local IRQs...\n");
     local_irq_disable();
 
-    if (ptr_syscore_shutdown) {
-        printk(KERN_EMERG "kexec: Tearing down syscore...\n");
-        ptr_syscore_shutdown();
-    }
+    //commented out because it crashes
+    // if (ptr_syscore_shutdown) {
+    //     printk(KERN_EMERG "kexec: Tearing down syscore...\n");
+    //     ptr_syscore_shutdown();
+    // }
 
     /* --- PHASE 3: SAFE COPYING (Interrupts OFF, NO malloc/sleep calls allowed) --- */
     
