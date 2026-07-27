@@ -496,6 +496,11 @@ static void execute_trampoline(void)
     printk(KERN_EMERG "kexec: Point of no return. Disabling local IRQs...\n");
     local_irq_disable();
 
+    if (ptr_syscore_shutdown) {
+        printk(KERN_EMERG "kexec: Tearing down syscore...\n");
+        ptr_syscore_shutdown();
+    }
+
     /* --- PHASE 3: SAFE COPYING (Interrupts OFF, NO malloc/sleep calls allowed) --- */
     
     dest = (unsigned char *)phys_to_virt(0x10000);
@@ -636,11 +641,8 @@ static long kexec_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
             if (ptr_migrate_to_reboot_cpu) ptr_migrate_to_reboot_cpu();
             
-            /* BARE-METAL UPGRADE: 
-             * Intentionally disabling generic system shutdown handlers to avoid AMD IOMMU 
-             * and DMA panic states immediately before transition!
-             */
-            // if (ptr_device_shutdown) ptr_device_shutdown();
+            /* BARE-METAL UPGRADE: Re-enabling ptr_device_shutdown to properly shutdown devices.*/
+            if (ptr_device_shutdown) ptr_device_shutdown();
             
             /* Attempt multiple SMP halt fallback strategies */
             if (ptr_smp_send_stop) {
@@ -654,8 +656,7 @@ static long kexec_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
             printk(KERN_EMERG "kexec: Waiting for secondary cores to halt...\n");
             mdelay(100);
             
-            
-            // if (ptr_syscore_shutdown) ptr_syscore_shutdown();
+
 
             execute_trampoline();
             break;
