@@ -660,22 +660,20 @@ static long kexec_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
             
             //instead, walk device tree and clear BME
 
-            /* BARE-METAL UPGRADE:
-             * Replaced device_shutdown() with targeted DMA teardown to prevent IOMMU panics.
-             */
-            if (ptr_pci_get_device && ptr_pci_clear_master) {
-                struct pci_dev *dev = NULL;
-                printk(KERN_EMERG "kexec: Clearing Bus Master bits on all PCI devices...\n");
 
-                // PCI_ANY_ID is defined in <linux/pci.h>
-                while ((dev = ptr_pci_get_device(PCI_ANY_ID, PCI_ANY_ID, dev)) != NULL) {
-                    ptr_pci_clear_master(dev);
-                }
-                printk(KERN_EMERG "kexec: PCI DMA successfully halted.\n");
-            } else if (ptr_iommu_shutdown) {
-                printk(KERN_EMERG "kexec: Falling back to iommu_shutdown()...\n");
-                ptr_iommu_shutdown();
-            }
+            // if (ptr_pci_get_device && ptr_pci_clear_master) {
+            //     struct pci_dev *dev = NULL;
+            //     printk(KERN_EMERG "kexec: Clearing Bus Master bits on all PCI devices...\n");
+            //
+            //     // PCI_ANY_ID is defined in <linux/pci.h>
+            //     while ((dev = ptr_pci_get_device(PCI_ANY_ID, PCI_ANY_ID, dev)) != NULL) {
+            //         ptr_pci_clear_master(dev);
+            //     }
+            //     printk(KERN_EMERG "kexec: PCI DMA successfully halted.\n");
+            // } else if (ptr_iommu_shutdown) {
+            //     printk(KERN_EMERG "kexec: Falling back to iommu_shutdown()...\n");
+            //     ptr_iommu_shutdown();
+            // }
 
             /* Attempt multiple SMP halt fallback strategies */
             if (ptr_smp_send_stop) {
