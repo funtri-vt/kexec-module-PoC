@@ -634,13 +634,14 @@ static long kexec_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
         case KEXEC_IOC_EXECUTE:
             printk(KERN_EMERG "kexec: EXECUTE command received.\n");
+            mdelay(2000); // debug here in case it's failing by waiting for the line above to print
             if (!loaded_kernel.virt_addrs) return -EINVAL;
 
             ret = setup_zero_page();
             if (ret) return ret;
 
             if (ptr_migrate_to_reboot_cpu) ptr_migrate_to_reboot_cpu();
-            
+
             /* BARE-METAL UPGRADE: Re-enabling ptr_device_shutdown to properly shutdown devices.*/
             if (ptr_device_shutdown) ptr_device_shutdown();
             
