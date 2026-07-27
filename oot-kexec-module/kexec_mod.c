@@ -500,6 +500,19 @@ static void execute_trampoline(void)
 
     /* --- PHASE 2: SYSTEM TEARDOWN --- */
     printk(KERN_EMERG "kexec: Quiescing core systems...\n");
+
+    /* Attempt multiple SMP halt fallback strategies */
+    if (ptr_smp_send_stop) {
+        ptr_smp_send_stop();
+    } else if (ptr_native_stop_other_cpus) {
+        ptr_native_stop_other_cpus(0); /* 0 usually implies no indefinite wait */
+    } else {
+        printk(KERN_EMERG "kexec: CRITICAL WARNING! No SMP stop function found! Core 1 may cause MCE.\n");
+    }
+
+    printk(KERN_EMERG "kexec: Waiting for secondary cores to halt...\n");
+    mdelay(100);
+
     if (ptr_lapic_shutdown) {
         printk(KERN_EMERG "kexec: Masking Local APIC Timer...\n");
         ptr_lapic_shutdown();
@@ -675,17 +688,6 @@ static long kexec_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
             //     ptr_iommu_shutdown();
             // }
 
-            /* Attempt multiple SMP halt fallback strategies */
-            if (ptr_smp_send_stop) {
-                ptr_smp_send_stop();
-            } else if (ptr_native_stop_other_cpus) {
-                ptr_native_stop_other_cpus(0); /* 0 usually implies no indefinite wait */
-            } else {
-                printk(KERN_EMERG "kexec: CRITICAL WARNING! No SMP stop function found! Core 1 may cause MCE.\n");
-            }
-            
-            printk(KERN_EMERG "kexec: Waiting for secondary cores to halt...\n");
-            mdelay(100);
             
 
 
