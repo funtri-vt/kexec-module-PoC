@@ -467,6 +467,7 @@ static void execute_trampoline(void)
 
         /* Decrypt trampoline and zero page */
         set_memory_decrypted(low_page_virt, 1);
+        set_memory_decrypted((unsigned long)zero_page_virt, 1);
         /* Decrypt low memory targets (0x10000 cmdline, 0x100000 kernel) */
         set_memory_decrypted((unsigned long)phys_to_virt(0x10000), 1);
         set_memory_decrypted((unsigned long)phys_to_virt(0x100000), kernel_pages);
@@ -745,7 +746,6 @@ int run_hijacked_initialization(void)
         return -ENOMEM;
     }
     zero_page_phys = virt_to_phys(zero_page_virt);
-    set_memory_decrypted((unsigned long)zero_page_virt, 1);
     ret = misc_register(&kexec_misc_device);
     if (ret) {
         printk(KERN_EMERG "kexec: misc_register failed (%d)\n", ret);
