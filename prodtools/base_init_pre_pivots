@@ -1,0 +1,4 @@
+#!/bin/sh
+finit_loader lib/kexec_mod.ko
+sleep 1
+custom_kexec -c "console=ttyS0,115200 board_id=$(cat /etc/cros_boardname) no_console_suspend"

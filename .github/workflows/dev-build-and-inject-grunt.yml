@@ -50,10 +50,8 @@ jobs:
           chmod +x devtools/detect_version_magic.sh
           chmod +x devtools/add_firmware_to_initramfs.sh 
           chmod +x devtools/add_firmware_to_initramfs/grunt.sh
-
-
           # Run the master orchestrator, passing the cache-hit variable so it knows to skip building
-          sudo CACHE_HIT="${{ steps.toolchain-cache.outputs.cache-hit }}" BOARD=grunt ./devtools/build_all.sh
+          sudo CACHE_HIT="${{ steps.toolchain-cache.outputs.cache-hit }}" BOARD=grunt ./devtools/build_complete.sh
 
       - name: Upload Patched Shimboot Artifact
         uses: actions/upload-artifact@v4

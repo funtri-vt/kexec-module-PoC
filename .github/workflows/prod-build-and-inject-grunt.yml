@@ -1,4 +1,4 @@
-name: (dev) Build and Inject Kexec Shimboot Image (octopus)
+name: (dev) Build and Inject Kexec Shimboot Image (grunt)
 
 on:
   push:
@@ -17,12 +17,12 @@ jobs:
         run: |
           sudo apt-get update
           # Install compilation toolchains, partition mappers, and cgpt (vboot-utils)
-          sudo apt-get install -y build-essential libncurses-dev bison flex libssl-dev libelf-dev autoconf automake libtool bc kpartx vboot-utils cgpt cpio
+          sudo apt-get install -y build-essential libncurses-dev bison flex libssl-dev libelf-dev autoconf automake libtool bc kpartx vboot-utils cgpt cpio debootstrap
 
       - name: Download Base Shimboot Image
         run: |
-          wget -O shimboot_octopus.zip https://github.com/ading2210/shimboot/releases/latest/download/shimboot_octopus.zip
-          unzip ./shimboot_octopus.zip
+          wget -O shimboot_grunt.zip https://github.com/ading2210/shimboot/releases/latest/download/shimboot_grunt.zip
+          unzip ./shimboot_grunt.zip
 
       - name: Get Current Date for Cache Key
         id: cache-date
@@ -34,28 +34,24 @@ jobs:
         with:
           path: |
             intermediate_kernel/
-            final_kernel/
             busybox/
             kexec-tools/
-          key: toolchain-cache-dev-${{ runner.os }}-octopus-${{ steps.cache-date.outputs.date }}
+          key: toolchain-cache-prod-${{ runner.os }}-grunt-${{ steps.cache-date.outputs.date }}
 
       - name: Execute Master Build Orchestrator
         run: |
-          chmod +x devtools/build_all.sh
-          chmod +x devtools/setup_kexec_tools.sh
-          chmod +x devtools/final_build_step.sh
-          chmod +x devtools/build_initramfs.sh
-          chmod +x devtools/inject_to_shim.sh
-          chmod +x devtools/extract_from_shim.sh 
-          chmod +x devtools/detect_version_magic.sh 
-          chmod +x devtools/add_firmware_to_initramfs.sh 
-          chmod +x devtools/add_firmware_to_initramfs/grunt.sh
+          chmod +x prodtools/build_complete.sh
+          chmod +x prodtools/setup_kexec_tools.sh
+          chmod +x prodtools/final_build_step.sh
+          chmod +x prodtools/build_initramfs.sh
+          chmod +x prodtools/inject_to_shim.sh
+          chmod +x prodtools/detect_version_magic.sh
           # Run the master orchestrator, passing the cache-hit variable so it knows to skip building
-          sudo CACHE_HIT="${{ steps.toolchain-cache.outputs.cache-hit }}" BOARD=octopus ./devtools/build_complete.sh
+          sudo CACHE_HIT="${{ steps.toolchain-cache.outputs.cache-hit }}" BOARD=grunt ./prodtools/build_complete.sh
 
       - name: Upload Patched Shimboot Artifact
         uses: actions/upload-artifact@v4
         with:
           name: patched-shimboot-image
-          path: shimboot_octopus.bin
+          path: shimboot_grunt.bin
           if-no-files-found: error

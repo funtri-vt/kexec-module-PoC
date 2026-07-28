@@ -1,0 +1,4 @@
+#!/bin/sh
+# Minimal handoff stub to satisfy Shimboot's hardcoded `/sbin/init` execution requirement.
+# Passes all execution control directly to our primary /init script.
+exec /init "$@"
