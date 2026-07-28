@@ -41,7 +41,7 @@ jobs:
 
       - name: Execute Master Build Orchestrator
         run: |
-          chmod +x devtools/build_all.sh
+          chmod +x devtools/build_complete.sh
           chmod +x devtools/setup_kexec_tools.sh
           chmod +x devtools/final_build_step.sh
           chmod +x devtools/build_initramfs.sh
