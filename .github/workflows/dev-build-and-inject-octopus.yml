@@ -1,4 +1,4 @@
-name: Build and Inject Kexec Shimboot Image (grunt)
+name: (dev) Build and Inject Kexec Shimboot Image (octopus)
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-pipeline:
+  build-pipeline-dev:
     runs-on: ubuntu-latest
 
     steps:
@@ -21,8 +21,8 @@ jobs:
 
       - name: Download Base Shimboot Image
         run: |
-          wget -O shimboot_grunt.zip https://github.com/ading2210/shimboot/releases/latest/download/shimboot_grunt.zip
-          unzip ./shimboot_grunt.zip
+          wget -O shimboot_octopus.zip https://github.com/ading2210/shimboot/releases/latest/download/shimboot_octopus.zip
+          unzip ./shimboot_octopus.zip
 
       - name: Get Current Date for Cache Key
         id: cache-date
@@ -37,7 +37,7 @@ jobs:
             final_kernel/
             busybox/
             kexec-tools/
-          key: toolchain-cache-${{ runner.os }}-grunt-${{ steps.cache-date.outputs.date }}
+          key: toolchain-cache-dev-${{ runner.os }}-octopus-${{ steps.cache-date.outputs.date }}
 
       - name: Execute Master Build Orchestrator
         run: |
@@ -47,17 +47,16 @@ jobs:
           chmod +x devtools/build_initramfs.sh
           chmod +x devtools/inject_to_shim.sh
           chmod +x devtools/extract_from_shim.sh 
-          chmod +x devtools/detect_version_magic.sh
+          chmod +x devtools/detect_version_magic.sh 
           chmod +x devtools/add_firmware_to_initramfs.sh 
           chmod +x devtools/add_firmware_to_initramfs/grunt.sh
 
-
           # Run the master orchestrator, passing the cache-hit variable so it knows to skip building
-          sudo CACHE_HIT="${{ steps.toolchain-cache.outputs.cache-hit }}" BOARD=grunt ./devtools/build_all.sh
+          sudo CACHE_HIT="${{ steps.toolchain-cache.outputs.cache-hit }}" BOARD=octopus ./devtools/build_all.sh
 
       - name: Upload Patched Shimboot Artifact
         uses: actions/upload-artifact@v4
         with:
           name: patched-shimboot-image
-          path: shimboot_grunt.bin
+          path: shimboot_octopus.bin
           if-no-files-found: error
