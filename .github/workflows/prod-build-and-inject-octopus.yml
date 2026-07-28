@@ -36,7 +36,7 @@ jobs:
             intermediate_kernel/
             busybox/
             kexec-tools/
-          key: toolchain-cache-prod-${{ runner.os }}-octopus-${{ steps.cache-date.outputs.date }}
+          key: toolchain-cache-prod-${{ runner.os }}-x86_64-${{ steps.cache-date.outputs.date }}
 
       - name: Execute Master Build Orchestrator
         run: |

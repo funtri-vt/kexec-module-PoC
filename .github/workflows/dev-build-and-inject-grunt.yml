@@ -37,7 +37,7 @@ jobs:
             final_kernel/
             busybox/
             kexec-tools/
-          key: toolchain-cache-dev-${{ runner.os }}-grunt-${{ steps.cache-date.outputs.date }}
+          key: toolchain-cache-dev-${{ runner.os }}-x86_64-${{ steps.cache-date.outputs.date }}
 
       - name: Execute Master Build Orchestrator
         run: |
