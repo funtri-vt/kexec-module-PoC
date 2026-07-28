@@ -1,0 +1,155 @@
+#!/bin/bash
+# Executes inside the Debian 13 chroot environment to finalize the OS configuration.
+
+set -e
+
+echo "=========================================================="
+echo " Executing Debian Chroot Configuration..."
+echo "=========================================================="
+
+# 1. Update and install core dependencies
+echo "[*] Updating apt and installing core dependencies..."
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+
+# Install kernel, initramfs tools, networking tools, and utilities
+apt-get install -y \
+    linux-image-amd64 \
+    initramfs-tools \
+    whiptail \
+    network-manager \
+    wpasupplicant \
+    cloud-guest-utils \
+    e2fsprogs \
+    sudo \
+    systemd \
+    systemd-sysv
+
+# 2. Configure /etc/fstab to use our GPT Partition Name
+echo "[*] Configuring /etc/fstab for PARTLABEL mounting..."
+echo "PARTLABEL=execboot_rootfs:debian  /  ext4  errors=remount-ro  0  1" > /etc/fstab
+
+# 3. Set a default hostname
+echo "debian-execboot" > /etc/hostname
+
+# 4. Deploy the First-Boot Setup Script
+echo "[*] Deploying /usr/local/bin/firstboot-setup.sh..."
+cat << 'EOF' > /usr/local/bin/firstboot-setup.sh
+#!/bin/bash
+
+# Redirect I/O directly to tty1 for UI rendering
+exec < /dev/tty1 > /dev/tty1 2>&1
+
+echo "=========================================================="
+echo " ExecBoot: First Boot Environment Setup"
+echo "=========================================================="
+
+# --- Phase 1: Auto-Expand Partition ---
+# Dynamically determine the root block device
+ROOT_DEV=$(findmnt -n -o SOURCE /)
+# Extract the base disk (e.g., /dev/sda) and partition number (e.g., 5)
+DISK="/dev/$(lsblk -no PKNAME "$ROOT_DEV" | head -n1)"
+PARTNUM=$(lsblk -no PARTN "$ROOT_DEV" | head -n1)
+
+if [ -n "$DISK" ] && [ -n "$PARTNUM" ]; then
+    echo "Expanding $DISK partition $PARTNUM..."
+    growpart "$DISK" "$PARTNUM" || true
+    resize2fs "$ROOT_DEV" || true
+else
+    echo "Warning: Could not safely determine root disk for expansion. Skipping..."
+fi
+
+# --- Phase 2: Network Initialization ---
+while ! ping -c 1 -W 3 deb.debian.org &> /dev/null; then
+    if whiptail --title "Network Required" --yesno "No internet connection detected.\n\nDo you need to configure Wi-Fi?" 10 50; then
+        nmtui-connect
+    else
+        whiptail --title "Error" --msgbox "Installation cannot proceed without internet. The system will now reboot." 8 45
+        reboot
+        exit 1
+    fi
+done
+
+# --- Phase 3: User Account Provisioning ---
+NEW_USER=""
+while [ -z "$NEW_USER" ]; do
+    NEW_USER=$(whiptail --title "User Creation" --inputbox "Enter a new username (lowercase only):" 10 40 3>&1 1>&2 2>&3)
+done
+
+PASSWORD=""
+PASSWORD_CONFIRM="x"
+while [ "$PASSWORD" != "$PASSWORD_CONFIRM" ]; do
+    PASSWORD=$(whiptail --title "User Creation" --passwordbox "Enter password for $NEW_USER:" 10 40 3>&1 1>&2 2>&3)
+    PASSWORD_CONFIRM=$(whiptail --title "User Creation" --passwordbox "Confirm password:" 10 40 3>&1 1>&2 2>&3)
+
+    if [ "$PASSWORD" != "$PASSWORD_CONFIRM" ]; then
+        whiptail --title "Error" --msgbox "Passwords do not match. Please try again." 8 40
+    fi
+done
+
+echo "Creating user $NEW_USER..."
+useradd -m -s /bin/bash -G sudo "$NEW_USER"
+echo "$NEW_USER:$PASSWORD" | chpasswd
+
+whiptail --title "Success" --msgbox "User $NEW_USER created successfully and added to the sudo group." 8 45
+
+# --- Phase 4: Payload Selection ---
+CHOICE=$(whiptail --title "System Setup" --menu "Internet Connected!\n\nChoose a Desktop Environment to install:" 15 50 4 \
+"1" "GNOME Desktop" \
+"2" "KDE Plasma" \
+"3" "XFCE Minimal" \
+"4" "CLI Only (Skip)" 3>&1 1>&2 2>&3)
+
+echo "Updating package databases..."
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -y
+
+case $CHOICE in
+    1) apt-get install -y task-gnome-desktop ;;
+    2) apt-get install -y task-kde-desktop ;;
+    3) apt-get install -y task-xfce-desktop ;;
+    4) echo "Skipping DE installation." ;;
+esac
+
+# --- Phase 5: Teardown & Handoff ---
+echo "Setup complete! Disabling first-boot script..."
+systemctl disable firstboot-setup.service
+
+whiptail --title "Complete" --msgbox "Installation finished. Press OK to start your environment." 8 45
+systemctl isolate graphical.target
+EOF
+
+chmod +x /usr/local/bin/firstboot-setup.sh
+
+# 5. Deploy the Systemd Service
+echo "[*] Deploying /etc/systemd/system/firstboot-setup.service..."
+cat << 'EOF' > /etc/systemd/system/firstboot-setup.service
+[Unit]
+Description=First Boot TUI Setup Script
+After=network.target NetworkManager.service systemd-user-sessions.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/firstboot-setup.sh
+StandardInput=tty-force
+StandardOutput=inherit
+StandardError=inherit
+TTYPath=/dev/tty1
+TimeoutSec=0
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# 6. Enable the first-boot service
+echo "[*] Arming the first-boot service..."
+systemctl enable firstboot-setup.service
+
+# 7. Cleanup
+echo "[*] Cleaning up chroot environment..."
+apt-get clean
+rm -rf /var/lib/apt/lists/*
+
+echo "=========================================================="
+echo " [SUCCESS] Debian chroot configuration complete!"
+echo "=========================================================="
