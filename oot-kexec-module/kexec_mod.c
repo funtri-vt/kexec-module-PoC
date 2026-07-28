@@ -718,7 +718,6 @@ static struct miscdevice kexec_misc_device = {
  */
 int run_hijacked_initialization(void)
 {
-    kallsyms_lookup_name_t ptr_kallsyms_lookup_name;
     int ret;
 
     if (oot_kexec_initialized) {
