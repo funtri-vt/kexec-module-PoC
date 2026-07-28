@@ -119,12 +119,7 @@ fi
 # 2. Add the native kexec-tools binary (Overwriting the busybox kexec symlink if it exists)
 cp "$KEXEC_STATIC_BIN" "$INTERMEDIATE_BUILD_DIR/sbin/kexec"
 
-# 3. Inject the Final Payloads into the Matryoshka Pocket
-echo "[*] Injecting Final Payloads into /payload pocket..."
-cp "$FINAL_KERNEL" "$INTERMEDIATE_BUILD_DIR/payload/bzImage"
-cp "$FINAL_ROOTFS" "$INTERMEDIATE_BUILD_DIR/payload/initramfs.cpio.gz"
-
-# 4. Generate the Automated /init Script
+# 3. Generate the Automated /init Script
 echo "[*] Generating blind automated /init script..."
 cat << 'EOF' > "$INTERMEDIATE_BUILD_DIR/init"
 #!/bin/sh
@@ -196,12 +191,41 @@ if [ "$BOARD_ID" = "grunt" ]; then # this might be useful later, but make sure t
 fi
 
 
-# PRODUCTION: LOAD AND FIND KERNEL TO RUN FROM DISC. THIS SHOULD HAVE BEEN CREATED WITH DEBOOTSTRAP BY final_build_step.sh
-# TODO: Implement
-# Load the final kernel natively using kexec-tools
-/sbin/kexec -l /payload/bzImage \
-    --initrd=/payload/initramfs.cpio.gz \
-    --command-line="root=/dev/ram0 rw debug loglevel=8 reset_devices amdgpu.sg_display=0 amdgpu.runpm=0 amdgpu.aspm=0 amdgpu.dc=0 amdgpu.dpm=0 amdgpu.bapm=0 amdgpu.audio=0 video=efifb:off video=vesafb:off video=simplefb:off sysfb_disable=1 drm.debug=0x1e $EXTRA_BOOT_ARGS"
+# PRODUCTION: Dynamically locate, mount, and kexec into the Debian partition
+echo "[AUTOMATON] Searching for Debian rootfs partition..."
+TARGET_DEV=""
+for i in $(seq 1 15); do
+    TARGET_DEV=$(blkid -t PARTLABEL="execboot_rootfs:debian" -o device | head -n1)
+    [ -n "$TARGET_DEV" ] && break
+    sleep 1
+done
+
+if [ -z "$TARGET_DEV" ]; then
+    echo "[-] FATAL: Could not find PARTLABEL=execboot_rootfs:debian after 15 seconds!"
+    while true; do sleep 1; done
+fi
+
+echo "[AUTOMATON] Found Debian partition at $TARGET_DEV. Mounting..."
+mkdir -p /mnt/debian
+mount -o ro "$TARGET_DEV" /mnt/debian
+
+TARGET_KERNEL=$(ls /mnt/debian/boot/vmlinuz-* | head -n 1)
+TARGET_INITRD=$(ls /mnt/debian/boot/initrd.img-* | head -n 1)
+
+if [ -z "$TARGET_KERNEL" ] || [ -z "$TARGET_INITRD" ]; then
+    echo "[-] FATAL: Kernel or Initramfs missing in /boot on $TARGET_DEV!"
+    while true; do sleep 1; done
+fi
+
+echo "[AUTOMATON] Loading kernel: $TARGET_KERNEL"
+# Note: Removed the heavy GPU/display disabling args from here, assuming you want
+# the final Debian system to actually initialize the GPU for the desktop!
+/sbin/kexec -l "$TARGET_KERNEL" \
+    --initrd="$TARGET_INITRD" \
+    --command-line="root=PARTLABEL=execboot_rootfs:debian rw console=$TARGET_TTY $EXTRA_BOOT_ARGS"
+
+echo "[AUTOMATON] Unmounting target partition..."
+umount /mnt/debian
 
 # Execute the native handoff (this properly shuts down the UART!)
 echo "[AUTOMATON] Executing native kexec jump NOW."
@@ -212,7 +236,7 @@ echo "[-] FATAL: kexec jump failed!"
 while true; do sleep 1; done
 EOF
 
-# 5. Pack the Intermediate Ramdisk
+# 4. Pack the Intermediate Ramdisk
 echo "[*] Packaging intermediate_initrd.cpio.gz (This may take a moment)..."
 
 # ==============================================================================

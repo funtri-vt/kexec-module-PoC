@@ -17,6 +17,7 @@ WORKSPACE="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 SHIM_IMG="$1"
 INITRAMFS_SRC="$WORKSPACE/initramfs.cpio.gz"
+DEBIAN_SRC="$WORKSPACE/debian_rootfs.ext4"
 MOUNT_DIR="/tmp/shimboot_mount"
 
 # Track if loop devices have been mapped to ensure safe cleanup
@@ -29,7 +30,7 @@ cleanup() {
     echo ""
     echo "=========================================================="
     echo "[*] Performing teardown and cleaning up environment..."
-    
+
     if [ -d "$MOUNT_DIR" ]; then
         if mountpoint -q "$MOUNT_DIR" 2>/dev/null; then
             echo "  [*] Unmounting $MOUNT_DIR..."
@@ -69,7 +70,13 @@ fi
 
 if [ ! -f "$INITRAMFS_SRC" ]; then
     echo "[-] Error: Custom initramfs payload not found at: $INITRAMFS_SRC"
-    echo "    Please run devtools/final_build_step.sh first to compile it!"
+    echo "    Please run prodtools/final_build_step.sh first to compile it!"
+    exit 1
+fi
+
+if [ ! -f "$DEBIAN_SRC" ]; then
+    echo "[-] Error: Debian rootfs image not found at: $DEBIAN_SRC"
+    echo "    Please run prodtools/build_debian_rootfs.sh first to create it!"
     exit 1
 fi
 
@@ -176,15 +183,30 @@ P4_START=$(cgpt show -i 4 -b "$SHIM_IMG")
 P4_SIZE=$(cgpt show -i 4 -s "$SHIM_IMG")
 [ -n "$P4_START" ] && [ -n "$P4_SIZE" ] || { echo "Failed to read partition info"; exit 1; }
 P4_END=$((P4_START + P4_SIZE))
+# --- STEP 4.6: INJECT DEBIAN ROOTFS TO PARTITION 5 ---
+echo "[*] Step 4.6: Adding Partition 5 and injecting Debian Rootfs..."
+DEBIAN_BYTES=$(stat -c%s "$DEBIAN_SRC")
+# Round up to nearest sector (512 bytes)
+DEBIAN_SECTORS=$(( (DEBIAN_BYTES + 511) / 512 ))
+
+P5_START=$P4_END
+P5_SIZE=$DEBIAN_SECTORS
+P5_END=$((P5_START + P5_SIZE))
 
 # Pad 2048 sectors (1MB) + 33 sectors for GPT backup
-NEW_SECTORS=$((P4_END + 2081))
+NEW_SECTORS=$((P5_END + 2100))
 NEW_BYTES=$((NEW_SECTORS * 512))
 
-echo "  [*] Truncating raw image file to $NEW_BYTES bytes..."
+echo "  [*] Truncating raw image file to $NEW_BYTES bytes to fit new payload..."
 truncate -s "$NEW_BYTES" "$SHIM_IMG"
 
-echo "  [*] Repairing GPT headers after truncation..."
+echo "  [*] Updating GPT partition table for Partition 5..."
+cgpt add -i 5 -b "$P5_START" -s "$P5_SIZE" -l "execboot_rootfs:debian" "$SHIM_IMG"
+
+echo "  [*] Writing Debian rootfs to Partition 5..."
+dd if="$DEBIAN_SRC" of="$SHIM_IMG" bs=512 seek="$P5_START" count="$P5_SIZE" conv=notrunc status=progress
+
+echo "  [*] Repairing GPT headers after injection and truncation..."
 cgpt repair "$SHIM_IMG" || true
 
 # --- STEP 5: FLUSH WRITES ---
