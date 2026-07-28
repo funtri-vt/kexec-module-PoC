@@ -26,7 +26,6 @@
 #include <linux/kallsyms.h>
 #include <linux/screen_info.h>
 #include <linux/delay.h>
-#include <linux/pci.h>
 #include <asm/io.h>
 #include <asm/pgtable.h>
 #include <asm/set_memory.h>
@@ -94,17 +93,6 @@ static void (*ptr_native_stop_other_cpus)(int wait) = NULL; /* Fallback SMP stop
 static void (*ptr_lapic_shutdown)(void) = NULL;
 static struct screen_info *ptr_screen_info = NULL;
 static unsigned long *ptr_sme_me_mask = NULL;
-
-/* --- PCI & IOMMU Teardown Function Pointers --- */
-
-/* Signature: struct pci_dev *pci_get_device(unsigned int vendor, unsigned int device, struct pci_dev *from) */
-static struct pci_dev *(*ptr_pci_get_device)(unsigned int, unsigned int, struct pci_dev *) = NULL;
-
-/* Signature: void pci_clear_master(struct pci_dev *dev) */
-static void (*ptr_pci_clear_master)(struct pci_dev *) = NULL;
-
-/* Signature: void iommu_shutdown(void) */
-static void (*ptr_iommu_shutdown)(void) = NULL;
 
 /* Guard flag to ensure the initialization runs exactly once */
 static int oot_kexec_initialized = 0;
@@ -500,19 +488,6 @@ static void execute_trampoline(void)
 
     /* --- PHASE 2: SYSTEM TEARDOWN --- */
     printk(KERN_EMERG "kexec: Quiescing core systems...\n");
-
-    /* Attempt multiple SMP halt fallback strategies */
-    if (ptr_smp_send_stop) {
-        ptr_smp_send_stop();
-    } else if (ptr_native_stop_other_cpus) {
-        ptr_native_stop_other_cpus(0); /* 0 usually implies no indefinite wait */
-    } else {
-        printk(KERN_EMERG "kexec: CRITICAL WARNING! No SMP stop function found! Core 1 may cause MCE.\n");
-    }
-
-    printk(KERN_EMERG "kexec: Waiting for secondary cores to halt...\n");
-    mdelay(100);
-
     if (ptr_lapic_shutdown) {
         printk(KERN_EMERG "kexec: Masking Local APIC Timer...\n");
         ptr_lapic_shutdown();
@@ -521,11 +496,10 @@ static void execute_trampoline(void)
     printk(KERN_EMERG "kexec: Point of no return. Disabling local IRQs...\n");
     local_irq_disable();
 
-    //commented out because it crashes
-    // if (ptr_syscore_shutdown) {
-    //     printk(KERN_EMERG "kexec: Tearing down syscore...\n");
-    //     ptr_syscore_shutdown();
-    // }
+    if (ptr_syscore_shutdown) {
+        printk(KERN_EMERG "kexec: Tearing down syscore...\n");
+        ptr_syscore_shutdown();
+    }
 
     /* --- PHASE 3: SAFE COPYING (Interrupts OFF, NO malloc/sleep calls allowed) --- */
     
@@ -660,34 +634,27 @@ static long kexec_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
         case KEXEC_IOC_EXECUTE:
             printk(KERN_EMERG "kexec: EXECUTE command received.\n");
-            mdelay(2000); // debug here in case it's failing by waiting for the line above to print
             if (!loaded_kernel.virt_addrs) return -EINVAL;
 
             ret = setup_zero_page();
             if (ret) return ret;
 
             if (ptr_migrate_to_reboot_cpu) ptr_migrate_to_reboot_cpu();
-
-            /* BARE-METAL UPGRADE: Re-enabling ptr_device_shutdown to properly shutdown devices.*/
-            //if (ptr_device_shutdown) ptr_device_shutdown(); it crashes the system
             
-            //instead, walk device tree and clear BME
-
-
-            // if (ptr_pci_get_device && ptr_pci_clear_master) {
-            //     struct pci_dev *dev = NULL;
-            //     printk(KERN_EMERG "kexec: Clearing Bus Master bits on all PCI devices...\n");
-            //
-            //     // PCI_ANY_ID is defined in <linux/pci.h>
-            //     while ((dev = ptr_pci_get_device(PCI_ANY_ID, PCI_ANY_ID, dev)) != NULL) {
-            //         ptr_pci_clear_master(dev);
-            //     }
-            //     printk(KERN_EMERG "kexec: PCI DMA successfully halted.\n");
-            // } else if (ptr_iommu_shutdown) {
-            //     printk(KERN_EMERG "kexec: Falling back to iommu_shutdown()...\n");
-            //     ptr_iommu_shutdown();
-            // }
-
+            /* BARE-METAL UPGRADE: Re-enabling ptr_device_shutdown to properly shutdown devices.*/
+            if (ptr_device_shutdown) ptr_device_shutdown();
+            
+            /* Attempt multiple SMP halt fallback strategies */
+            if (ptr_smp_send_stop) {
+                ptr_smp_send_stop();
+            } else if (ptr_native_stop_other_cpus) {
+                ptr_native_stop_other_cpus(0); /* 0 usually implies no indefinite wait */
+            } else {
+                printk(KERN_EMERG "kexec: CRITICAL WARNING! No SMP stop function found! Core 1 may cause MCE.\n");
+            }
+            
+            printk(KERN_EMERG "kexec: Waiting for secondary cores to halt...\n");
+            mdelay(100);
             
 
 
@@ -718,6 +685,7 @@ static struct miscdevice kexec_misc_device = {
  */
 int run_hijacked_initialization(void)
 {
+    kallsyms_lookup_name_t ptr_kallsyms_lookup_name;
     int ret;
 
     if (oot_kexec_initialized) {
@@ -745,20 +713,6 @@ int run_hijacked_initialization(void)
     ptr_lapic_shutdown = (void *)ptr_kallsyms_lookup_name("lapic_shutdown");
     ptr_screen_info = (struct screen_info *)ptr_kallsyms_lookup_name("screen_info");
     ptr_sme_me_mask = (unsigned long *)ptr_kallsyms_lookup_name("sme_me_mask");
-
-    // Resolve the PCI functions to stop DMA
-    ptr_pci_get_device = (void *)ptr_kallsyms_lookup_name("pci_get_device");
-    if (!ptr_pci_get_device) {
-        printk(KERN_WARNING "kexec: pci_get_device symbol not found!\n");
-    }
-
-    ptr_pci_clear_master = (void *)ptr_kallsyms_lookup_name("pci_clear_master");
-    if (!ptr_pci_clear_master) {
-        printk(KERN_WARNING "kexec: pci_clear_master symbol not found!\n");
-    }
-
-    // Optional: Resolve IOMMU shutdown as a fallback
-    ptr_iommu_shutdown = (void *)ptr_kallsyms_lookup_name("iommu_shutdown");
 
     /* --- Comprehensive Symbol Logging --- */
     if (!ptr_device_shutdown) printk(KERN_WARNING "kexec: device_shutdown symbol missing!\n");
