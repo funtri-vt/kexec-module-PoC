@@ -2,7 +2,7 @@
 # Script to mount a patched shimboot image, find partition 4 (or the rootfs partition),
 # unpack our custom host initramfs directly into it, and safely detach.
 #
-# RUN THIS SCRIPT WITH SUDO: sudo ./devtools/inject_to_shim.sh <path_to_shim.bin>
+# RUN THIS SCRIPT WITH SUDO: sudo ./prodtools/inject_to_shim.sh <path_to_shim.bin>
 # Exit immediately if any command fails
 set -e
 set -o pipefail

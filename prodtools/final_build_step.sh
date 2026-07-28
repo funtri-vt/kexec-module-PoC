@@ -55,19 +55,6 @@ echo "[*] Step 2.5: Deploying /etc/cros_boardname info..."
 mkdir -p "$WORKSPACE/busybox/_install/etc/"
 echo $BOARD > $WORKSPACE/busybox/_install/etc/cros_boardname
 echo "  [+] /etc/cros_boardname installed."
-# 3. Pack the final rootfs archive (Cleaned-up pack_final_rootfs.sh logic)
-echo "[*] Step 3: Packing final target rootfs archive..."
-if [ -d "$WORKSPACE/final_rootfs_busybox/_install" ]; then
-    # Navigate to target directory to keep path structures clean inside the archive
-    cd "$WORKSPACE/final_rootfs_busybox/_install"
-    
-    # Pack into final_rootfs.cpio.gz at workspace root
-    find . -print0 | cpio --null -ov --format=newc --owner root:root | gzip -9 > "$WORKSPACE/final_rootfs.cpio.gz"
-    echo "  [+] Successfully packaged final_rootfs.cpio.gz."
-else
-    echo "  [-] Error: Target directory $WORKSPACE/final_rootfs_busybox/_install does not exist."
-    exit 1
-fi
 
 # 4. Trigger the actual nested initramfs build pipeline using absolute paths
 echo "[*] Step 4: Launching main build pipeline..."
