@@ -1,4 +1,4 @@
-name: (dev) Build and Inject Kexec Shimboot Image (grunt)
+name: (prod) Build and Inject Kexec Shimboot Image (grunt)
 
 on:
   push:

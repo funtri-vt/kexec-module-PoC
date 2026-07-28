@@ -1,4 +1,4 @@
-name: (dev) Build and Inject Kexec Shimboot Image (octopus)
+name: (prod) Build and Inject Kexec Shimboot Image (octopus)
 
 on:
   push:
