@@ -183,6 +183,7 @@ P4_START=$(cgpt show -i 4 -b "$SHIM_IMG")
 P4_SIZE=$(cgpt show -i 4 -s "$SHIM_IMG")
 [ -n "$P4_START" ] && [ -n "$P4_SIZE" ] || { echo "Failed to read partition info"; exit 1; }
 P4_END=$((P4_START + P4_SIZE))
+
 # --- STEP 4.6: INJECT DEBIAN ROOTFS TO PARTITION 5 ---
 echo "[*] Step 4.6: Adding Partition 5 and injecting Debian Rootfs..."
 DEBIAN_BYTES=$(stat -c%s "$DEBIAN_SRC")
@@ -193,21 +194,18 @@ P5_START=$P4_END
 P5_SIZE=$DEBIAN_SECTORS
 P5_END=$((P5_START + P5_SIZE))
 
-# Pad 2048 sectors (1MB) + 33 sectors for GPT backup
+# Pad 2048 sectors (1MB) + 33 sectors for GPT backup (plus 19 sector buffer)
 NEW_SECTORS=$((P5_END + 2100))
 NEW_BYTES=$((NEW_SECTORS * 512))
 
-echo "  [*] Truncating raw image file to $NEW_BYTES bytes to fit new payload..."
-truncate -s "$NEW_BYTES" "$SHIM_IMG"
-
-echo "  [*] Repairing GPT headers to align with new file size..."
-cgpt repair "$SHIM_IMG"
-
-echo "  [*] Updating GPT partition table for Partition 5..."
+echo "  [*] Updating GPT partition table for Partition 5 BEFORE truncation..."
 cgpt add -i 5 -b "$P5_START" -s "$P5_SIZE" -l "execboot_rootfs:debian" "$SHIM_IMG"
 
 echo "  [*] Writing Debian rootfs to Partition 5..."
 dd if="$DEBIAN_SRC" of="$SHIM_IMG" bs=512 seek="$P5_START" count="$P5_SIZE" conv=notrunc status=progress
+
+echo "  [*] Truncating raw image file to $NEW_BYTES bytes to fit new payload..."
+truncate -s "$NEW_BYTES" "$SHIM_IMG"
 
 echo "  [*] Repairing GPT headers after injection and truncation..."
 cgpt repair "$SHIM_IMG" || true
