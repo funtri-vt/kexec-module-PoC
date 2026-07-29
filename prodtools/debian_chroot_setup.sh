@@ -41,6 +41,10 @@ echo "xhci_pci" >> /etc/initramfs-tools/modules
 echo "xhci_hcd" >> /etc/initramfs-tools/modules
 echo "usb_storage" >> /etc/initramfs-tools/modules
 echo "uas" >> /etc/initramfs-tools/modules
+echo "dwc3" >> /etc/initramfs-tools/modules
+echo "dwc3-pci" >> /etc/initramfs-tools/modules
+echo "phy-amd-pt" >> /etc/initramfs-tools/modules
+
 
 # --- FORCE AMDGPU FIRMWARE INCLUSION ---
 echo "[*] Creating initramfs hook to force-pack AMD firmware..."
