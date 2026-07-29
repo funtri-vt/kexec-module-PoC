@@ -33,6 +33,8 @@ apt-get install -y \
     systemd-sysv \
     firmware-amd-graphics
 
+update-initramfs -u -k all
+
 # 2. Configure /etc/fstab to use our GPT Partition Name
 echo "[*] Configuring /etc/fstab for PARTLABEL mounting..."
 echo "PARTLABEL=execboot_rootfs:debian  /  ext4  errors=remount-ro  0  1" > /etc/fstab
