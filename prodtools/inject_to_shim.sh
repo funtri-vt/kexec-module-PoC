@@ -200,6 +200,9 @@ NEW_BYTES=$((NEW_SECTORS * 512))
 echo "  [*] Truncating raw image file to $NEW_BYTES bytes to fit new payload..."
 truncate -s "$NEW_BYTES" "$SHIM_IMG"
 
+echo "  [*] Repairing GPT headers to align with new file size..."
+cgpt repair "$SHIM_IMG"
+
 echo "  [*] Updating GPT partition table for Partition 5..."
 cgpt add -i 5 -b "$P5_START" -s "$P5_SIZE" -l "execboot_rootfs:debian" "$SHIM_IMG"
 

@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-pipeline-dev:
+  build-pipeline-prod:
     runs-on: ubuntu-latest
 
     steps:

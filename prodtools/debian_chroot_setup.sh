@@ -7,6 +7,13 @@ echo "=========================================================="
 echo " Executing Debian Chroot Configuration..."
 echo "=========================================================="
 
+# 0. Enable non-free firmware repositories
+echo "[*] Configuring apt sources for non-free-firmware..."
+cat << 'EOF' > /etc/apt/sources.list
+deb http://deb.debian.org/debian/ trixie main contrib non-free non-free-firmware
+deb-src http://deb.debian.org/debian/ trixie main contrib non-free non-free-firmware
+EOF
+
 # 1. Update and install core dependencies
 echo "[*] Updating apt and installing core dependencies..."
 export DEBIAN_FRONTEND=noninteractive
@@ -23,7 +30,8 @@ apt-get install -y \
     e2fsprogs \
     sudo \
     systemd \
-    systemd-sysv
+    systemd-sysv \
+    firmware-amd-graphics
 
 # 2. Configure /etc/fstab to use our GPT Partition Name
 echo "[*] Configuring /etc/fstab for PARTLABEL mounting..."
