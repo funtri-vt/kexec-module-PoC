@@ -187,7 +187,7 @@ if [ "$BOARD_ID" = "grunt" ]; then # this might be useful later, but make sure t
     fi
 
     # Phase 2: construct boot args to make apuart console work for AMD boards
-    EXTRA_BOOT_ARGS="earlycon=uart8250,mmio32,0xfedc6000,4430n8 console=uart,mmio32,0xfedc6000,4430n8 ignore_loglevel board_id=$BOARD_ID panic=10 pm_async=0"
+    EXTRA_BOOT_ARGS="earlycon=uart8250,mmio32,0xfedc6000,4430n8 console=uart,mmio32,0xfedc6000,4430n8 ignore_loglevel board_id=$BOARD_ID panic=10 pm_async=0 rootdelay=10"
 fi
 
 
@@ -224,11 +224,18 @@ if [ -z "$TARGET_PARTUUID" ]; then
     while true; do sleep 1; done
 fi
 
+TARGET_UUID=$(blkid -s UUID -o value "$TARGET_DEV")
+
+if [ -z "$TARGET_UUID" ]; then
+    echo "[-] FATAL: Could not determine UUID for $TARGET_DEV!"
+    while true; do sleep 1; done
+fi
+
 echo "[AUTOMATON] Loading kernel: $TARGET_KERNEL"
 # Note: Added 'rootwait' to allow USB enumeration and switched to 'PARTUUID=' syntax
 /sbin/kexec -l "$TARGET_KERNEL" \
     --initrd="$TARGET_INITRD" \
-    --command-line="root=PARTUUID=$TARGET_PARTUUID rootwait rw console=$TARGET_TTY $EXTRA_BOOT_ARGS"
+    --command-line="root=UUID=$TARGET_UUID rootwait rw console=$TARGET_TTY $EXTRA_BOOT_ARGS"
 
 echo "[AUTOMATON] Unmounting target partition..."
 umount /mnt/debian

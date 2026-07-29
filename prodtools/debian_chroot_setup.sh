@@ -37,6 +37,10 @@ apt-get install -y \
 sed -i 's/^MODULES=.*/MODULES=most/' /etc/initramfs-tools/initramfs.conf
 
 echo "amdgpu" >> /etc/initramfs-tools/modules
+echo "xhci_pci" >> /etc/initramfs-tools/modules
+echo "xhci_hcd" >> /etc/initramfs-tools/modules
+echo "usb_storage" >> /etc/initramfs-tools/modules
+echo "uas" >> /etc/initramfs-tools/modules
 
 # --- FORCE AMDGPU FIRMWARE INCLUSION ---
 echo "[*] Creating initramfs hook to force-pack AMD firmware..."
