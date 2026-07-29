@@ -38,6 +38,33 @@ sed -i 's/^MODULES=.*/MODULES=most/' /etc/initramfs-tools/initramfs.conf
 
 echo "amdgpu" >> /etc/initramfs-tools/modules
 
+# --- FORCE AMDGPU FIRMWARE INCLUSION ---
+echo "[*] Creating initramfs hook to force-pack AMD firmware..."
+
+mkdir -p /etc/initramfs-tools/hooks
+cat << 'EOF' > /etc/initramfs-tools/hooks/force_amdgpu
+#!/bin/sh
+PREREQ=""
+prereqs() { echo "$PREREQ"; }
+case $1 in
+    prereqs) prereqs; exit 0 ;;
+esac
+
+. /usr/share/initramfs-tools/hook-functions
+
+# Unconditionally copy the entire amdgpu firmware directory into the initrd
+if [ -d /lib/firmware/amdgpu ]; then
+    mkdir -p "${DESTDIR}/lib/firmware"
+    cp -a /lib/firmware/amdgpu "${DESTDIR}/lib/firmware/"
+    echo "  [+] Hook triggered: AMDGPU firmware copied to initrd."
+fi
+EOF
+
+# Make the hook executable so initramfs-tools actually runs it
+chmod +x /etc/initramfs-tools/hooks/force_amdgpu
+
+# Now build the initramfs
+echo "[*] Generating final initramfs..."
 update-initramfs -u -k all
 
 # 2. Configure /etc/fstab to use our GPT Partition Name
