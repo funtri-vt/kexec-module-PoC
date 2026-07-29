@@ -187,6 +187,51 @@ EOF
 echo "[*] Arming the first-boot service..."
 systemctl enable firstboot-setup.service
 
+echo "[*] Installing Blind Log Dumper service..."
+
+# 1. Create the dump script
+cat << 'EOF' > /usr/local/bin/dump-logs.sh
+#!/bin/bash
+# Wait 45 seconds to let all display drivers and background services settle
+sleep 45
+
+# Create/Overwrite the log file in the root directory
+LOGFILE="/root/boot_dmesg.log"
+
+echo "================ DMESG ================" > $LOGFILE
+dmesg >> $LOGFILE
+echo -e "\n================ LSPCI ================" >> $LOGFILE
+lspci -k >> $LOGFILE
+echo -e "\n================ JOURNAL ================" >> $LOGFILE
+journalctl -b -n 500 --no-pager >> $LOGFILE
+
+# Force flush all cached writes to the physical USB blocks
+sync
+sync
+EOF
+
+chmod +x /usr/local/bin/dump-logs.sh
+
+# 2. Create the systemd service to run it on boot
+cat << 'EOF' > /etc/systemd/system/blind-logger.service
+[Unit]
+Description=Blind Log Dumper for Headless Debugging
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/dump-logs.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# 3. Enable the service so it runs automatically
+systemctl enable blind-logger.service
+
+echo "[+] Blind Log Dumper installed and enabled."
+
 # 7. Cleanup
 echo "[*] Cleaning up chroot environment..."
 apt-get clean
