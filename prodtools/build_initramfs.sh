@@ -209,8 +209,8 @@ echo "[AUTOMATON] Found Debian partition at $TARGET_DEV. Mounting..."
 mkdir -p /mnt/debian
 mount -o ro "$TARGET_DEV" /mnt/debian
 
-TARGET_KERNEL=$(ls /mnt/debian/boot/vmlinuz-* | head -n 1)
-TARGET_INITRD=$(ls /mnt/debian/boot/initrd.img-* | head -n 1)
+TARGET_KERNEL=$(ls /mnt/debian/vmlinuz | head -n 1)
+TARGET_INITRD=$(ls /mnt/debian/initrd.img | head -n 1)
 
 if [ -z "$TARGET_KERNEL" ] || [ -z "$TARGET_INITRD" ]; then
     echo "[-] FATAL: Kernel or Initramfs missing in /boot on $TARGET_DEV!"
