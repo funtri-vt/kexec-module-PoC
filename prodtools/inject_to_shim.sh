@@ -199,7 +199,7 @@ NEW_SECTORS=$((P5_END + 2100))
 NEW_BYTES=$((NEW_SECTORS * 512))
 
 echo "  [*] Updating GPT partition table for Partition 5 BEFORE truncation..."
-cgpt add -i 5 -b "$P5_START" -s "$P5_SIZE" -l "execboot_rootfs:debian" "$SHIM_IMG"
+cgpt add -t data -i 5 -b "$P5_START" -s "$P5_SIZE" -l "execboot_rootfs:debian" "$SHIM_IMG"
 
 echo "  [*] Writing Debian rootfs to Partition 5..."
 dd if="$DEBIAN_SRC" of="$SHIM_IMG" bs=512 seek="$P5_START" count="$P5_SIZE" conv=notrunc status=progress
