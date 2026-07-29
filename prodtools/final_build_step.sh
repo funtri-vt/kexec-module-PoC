@@ -56,6 +56,16 @@ mkdir -p "$WORKSPACE/busybox/_install/etc/"
 echo $BOARD > $WORKSPACE/busybox/_install/etc/cros_boardname
 echo "  [+] /etc/cros_boardname installed."
 
+# 3. Build the Debian rootfs image
+echo "[*] Step 3: Building Debian 13 Base Rootfs..."
+DEBIAN_BUILDER="$WORKSPACE/prodtools/build_debian_rootfs.sh"
+if [ -f "$DEBIAN_BUILDER" ]; then
+    sudo bash "$DEBIAN_BUILDER"
+else
+    echo "  [-] Error: Debian builder script not found at $DEBIAN_BUILDER"
+    exit 1
+fi
+
 # 4. Trigger the actual nested initramfs build pipeline using absolute paths
 echo "[*] Step 4: Launching main build pipeline..."
 BUILD_SCRIPT="$WORKSPACE/prodtools/build_initramfs.sh"
