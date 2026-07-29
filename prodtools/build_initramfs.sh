@@ -216,13 +216,19 @@ if [ -z "$TARGET_KERNEL" ] || [ -z "$TARGET_INITRD" ]; then
     echo "[-] FATAL: Kernel or Initramfs missing in /boot on $TARGET_DEV!"
     while true; do sleep 1; done
 fi
+echo "[AUTOMATON] Extracting reliable PARTUUID for target device..."
+TARGET_PARTUUID=$(blkid -s PARTUUID -o value "$TARGET_DEV")
+
+if [ -z "$TARGET_PARTUUID" ]; then
+    echo "[-] FATAL: Could not determine PARTUUID for $TARGET_DEV!"
+    while true; do sleep 1; done
+fi
 
 echo "[AUTOMATON] Loading kernel: $TARGET_KERNEL"
-# Note: Removed the heavy GPU/display disabling args from here, assuming you want
-# the final Debian system to actually initialize the GPU for the desktop!
+# Note: Added 'rootwait' to allow USB enumeration and switched to 'PARTUUID=' syntax
 /sbin/kexec -l "$TARGET_KERNEL" \
     --initrd="$TARGET_INITRD" \
-    --command-line="root=PARTLABEL=execboot_rootfs:debian rw console=$TARGET_TTY $EXTRA_BOOT_ARGS"
+    --command-line="root=PARTUUID=$TARGET_PARTUUID rootwait rw console=$TARGET_TTY $EXTRA_BOOT_ARGS"
 
 echo "[AUTOMATON] Unmounting target partition..."
 umount /mnt/debian
