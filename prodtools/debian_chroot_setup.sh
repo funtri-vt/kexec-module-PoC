@@ -33,6 +33,9 @@ apt-get install -y \
     systemd-sysv \
     firmware-amd-graphics
 
+# Force initramfs-tools to include all firmware and drivers (crucial for cross-hardware builds)
+sed -i 's/^MODULES=.*/MODULES=most/' /etc/initramfs-tools/initramfs.conf
+
 update-initramfs -u -k all
 
 # 2. Configure /etc/fstab to use our GPT Partition Name
