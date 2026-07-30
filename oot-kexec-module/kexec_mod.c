@@ -104,6 +104,9 @@ static void free_scatter_buffer(struct scatter_buffer *buf)
     if (buf->virt_addrs) {
         for (i = 0; i < buf->nr_pages; i++) {
             if (buf->virt_addrs[i]) {
+                if (ptr_sme_me_mask && *ptr_sme_me_mask != 0) {
+                    set_memory_encrypted(buf->virt_addrs[i], 1);
+                }
                 free_page(buf->virt_addrs[i]);
             }
         }
@@ -197,6 +200,10 @@ static int load_user_to_scatter_buffer(struct scatter_buffer *buf, const void __
         if (!buf->virt_addrs[i]) {
             free_scatter_buffer(buf);
             return -ENOMEM;
+        }
+        if ( ptr_sme_me_mask && *ptr_sme_me_mask != 0) {
+            set_memory_decrypted(buf->virt_addrs[i], 1);
+            clflush_cache_range((void *)buf->virt_addrs[i], PAGE_SIZE_4K);
         }
         
         /* Store physical address for the final jump */
@@ -425,6 +432,8 @@ static void execute_trampoline(void)
         return;
     }
 
+    size_t kernel_payload_size = (loaded_kernel.size > kernel_pm_offset) ?
+                              (loaded_kernel.size - kernel_pm_offset) : 0;
     /* BARE-METAL IDENTITY-MAP UPGRADE:
      * Populate only the exact number of required PMD tables dynamically.
      * Maps each segment cleanly up to the system memory ceiling!
@@ -435,17 +444,18 @@ static void execute_trampoline(void)
             uint64_t phys_end = phys_start + 0x200000ULL;
             uint64_t entry_sme = sme_mask;
 
-            uint64_t kernel_start = 0x100000;
-            uint64_t kernel_end = kernel_start + (loaded_kernel.size - kernel_pm_offset);
+            uint64_t kernel_start = 0x100000ULL;
+            uint64_t kernel_end   = kernel_start + kernel_payload_size;
+
+            uint64_t initrd_start = initrd_phys_dest;
+            uint64_t initrd_end   = initrd_phys_dest + loaded_initrd.size;
 
             /* Strip C-bit from ANY 2MB PMD that overlaps with decrypted targets to prevent MCEs */
             if ((low_page_phys >= phys_start && low_page_phys < phys_end) ||
                 (zero_page_phys >= phys_start && zero_page_phys < phys_end) ||
                 (0x10000 >= phys_start && 0x10000 < phys_end) ||
-                (kernel_end > phys_start && kernel_start < phys_end) ||
-                (loaded_initrd.size > 0 &&
-                 (initrd_phys_dest + loaded_initrd.size) > phys_start &&
-                 initrd_phys_dest < phys_end)) {
+                (kernel_payload_size > 0 && kernel_start < phys_end && kernel_end > phys_start) ||
+                (loaded_initrd.size > 0 && initrd_start < phys_end && initrd_end > phys_start)) {
 
                 entry_sme = 0;
             }
@@ -467,13 +477,17 @@ static void execute_trampoline(void)
 
         /* Decrypt trampoline and zero page */
         set_memory_decrypted(low_page_virt, 1);
+        clflush_cache_range((void *)low_page_virt, PAGE_SIZE_4K);
         /* Decrypt low memory targets (0x10000 cmdline, 0x100000 kernel) */
         set_memory_decrypted((unsigned long)phys_to_virt(0x10000), 1);
-        set_memory_decrypted((unsigned long)phys_to_virt(0x100000), kernel_pages);
+        clflush_cache_range(phys_to_virt(0x10000), PAGE_SIZE_4K);
 
+        set_memory_decrypted((unsigned long)phys_to_virt(0x100000), kernel_pages);
+        clflush_cache_range(phys_to_virt(0x100000), kernel_pages * PAGE_SIZE_4K);
         /* Decrypt initrd destination if present */
         if (loaded_initrd.size > 0) {
             set_memory_decrypted((unsigned long)phys_to_virt(initrd_phys_dest), loaded_initrd.nr_pages);
+            clflush_cache_range(phys_to_virt(initrd_phys_dest), loaded_initrd.nr_pages * PAGE_SIZE_4K);
         }
     }
 
@@ -569,8 +583,6 @@ static void execute_trampoline(void)
     /* Point execution straight to our copied assembly block (offset 32 bytes past the control block) */
     jump_target = low_page_phys + 32;
 
-    /* Blastoff with mandatory hardware cache flush so our physical writes hit main RAM */
-    asm volatile("wbinvd\n\t");
 
     /* Release our temporary C PMD tracking array cleanly now that the page tables are loaded */
     kfree(pmds);
@@ -578,11 +590,9 @@ static void execute_trampoline(void)
     /* CRITICAL FIX: Pass low_page_phys in %rdi and zero_page_phys in %rsi. 
      * This bypasses RIP-relative calculation discrepancies entirely!
      */
-    unsigned long long delay_counter;
+    /* Write back and invalidate all CPU cache lines to DRAM before disabling paging */
+    asm volatile("wbinvd\n\t" ::: "memory");
 
-    for (delay_counter = 0; delay_counter < 3000000000ULL; delay_counter++) {
-        asm volatile("nop\n\t");
-    }
     asm volatile(
         "cli\n\t"
         "movq %1, %%rdi\n\t"
@@ -789,7 +799,12 @@ static void __exit dummy_kexec_exit(void)
     free_scatter_buffer(&loaded_kernel);
     free_scatter_buffer(&loaded_initrd);
 
-    if (zero_page_virt) free_page((unsigned long)zero_page_virt);
+    if (zero_page_virt) {
+        if (ptr_sme_me_mask && *ptr_sme_me_mask != 0) {
+            set_memory_encrypted((unsigned long)zero_page_virt, 1);
+        }
+        free_page((unsigned long)zero_page_virt);
+    }
 
     misc_deregister(&kexec_misc_device);
     printk(KERN_EMERG "kexec: Module unloaded.\n");
