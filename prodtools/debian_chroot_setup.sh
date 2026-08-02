@@ -243,6 +243,13 @@ systemctl enable blind-logger.service
 
 echo "[+] Blind Log Dumper installed and enabled."
 
+echo "[*] Creating and setting up user accounts..."
+echo "root:root" | chpasswd
+
+useradd -m -s /bin/bash debuguser
+echo "debuguser:debug" | chpasswd
+usermod -aG sudo debuguser
+
 # 7. Cleanup
 echo "[*] Cleaning up chroot environment..."
 apt-get clean

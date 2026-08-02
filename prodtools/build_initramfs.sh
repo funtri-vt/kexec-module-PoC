@@ -187,7 +187,7 @@ if [ "$BOARD_ID" = "grunt" ]; then # this might be useful later, but make sure t
     fi
 
     # Phase 2: construct boot args to make apuart console work for AMD boards
-    EXTRA_BOOT_ARGS="earlycon=uart8250,mmio32,0xfedc6000,4430n8 console=uart,mmio32,0xfedc6000,4430n8 ignore_loglevel board_id=$BOARD_ID panic=10 pm_async=0 rootdelay=10"
+    EXTRA_BOOT_ARGS="earlycon=uart8250,mmio32,0xfedc6000,4430n8 console=uart,mmio32,0xfedc6000,4430n8 ignore_loglevel board_id=$BOARD_ID panic=10 pm_async=0 amdgpu.dpm=0 amdgpu.ppfeaturemask=0"
 fi
 
 
