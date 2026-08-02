@@ -65,6 +65,13 @@ struct e820_entry {
 /* Coreboot signature "LBIO" (0x4F49424C in little-endian) */
 #define CB_SIGNATURE 0x4F49424C
 #define CB_TAG_MEMORY 0x0001
+#define CB_TAG_FORWARD 0x0011
+
+struct cb_forward {
+    uint32_t tag;
+    uint32_t size;
+    uint64_t forward;
+} __attribute__((packed));
 
 /* Smart-Scan Coreboot Header */
 struct lb_header {
@@ -275,104 +282,114 @@ struct real_boot_params {
     /* 0x2d0 */ uint8_t e820_table[112 * 20];   /* 0x2d0 */
 } __attribute__((packed));
 
-static int parse_coreboot_memory(struct real_boot_params *zp, void *host_boot_params)
+/* Helper 1: Extracts E820 from a verified LBIO table */
+static int extract_e820_from_lbio(void *vaddr, struct real_boot_params *zp)
 {
-    uint64_t scan_top = 0;
-    unsigned long current_page;
-    unsigned long scan_floor;
+    struct lb_header *header = (struct lb_header *)vaddr;
+    uint32_t entries = header->table_entries;
+    void *current_rec = (void *)((unsigned char *)vaddr + header->header_bytes);
+    uint32_t j;
 
-    /* Step 1: Read the host E820 map to find the highest usable RAM region beneath 4GB */
-    if (host_boot_params) {
-        uint8_t entries = *(uint8_t *)((unsigned char *)host_boot_params + 0x1e8);
-        struct e820_entry *table = (struct e820_entry *)((unsigned char *)host_boot_params + 0x2d0);
-        int i;
-        for (i = 0; i < entries; i++) {
-            if (table[i].type == 1) { /* E820_TYPE_RAM */
-                uint64_t end_addr = table[i].addr + table[i].size;
-                /* Cap it at 4GB (0xFFFFFFFF) */
-                if (end_addr <= 0xFFFFFFFFULL && end_addr > scan_top) {
-                    scan_top = end_addr;
+    for (j = 0; j < entries; j++) {
+        struct lb_record *rec = (struct lb_record *)current_rec;
+
+        if (rec->tag == CB_TAG_MEMORY) {
+            struct lb_memory *mem = (struct lb_memory *)rec;
+            int num_ranges = (mem->size - sizeof(struct lb_memory)) / sizeof(struct lb_memory_range);
+            struct e820_entry *e820 = (struct e820_entry *)zp->e820_table;
+            int k;
+
+            if (num_ranges > 112) num_ranges = 112;
+
+            zp->e820_entries = num_ranges;
+
+            for (k = 0; k < num_ranges; k++) {
+                e820[k].addr = mem->map[k].start;
+                e820[k].size = mem->map[k].size;
+                e820[k].type = mem->map[k].type;
+            }
+
+            printk(KERN_INFO "kexec: Populated %d E820 entries directly from Coreboot!\n", num_ranges);
+            return 0; /* Success */
+        }
+        current_rec = (void *)((unsigned char *)current_rec + rec->size);
+    }
+    return -1;
+}
+
+/* Helper 2: Checks if an LBIO table is just a forwarder to high memory */
+static uint64_t check_for_forwarder(void *vaddr)
+{
+    struct lb_header *header = (struct lb_header *)vaddr;
+    uint32_t entries = header->table_entries;
+    void *current_rec = (void *)((unsigned char *)vaddr + header->header_bytes);
+    uint32_t j;
+
+    for (j = 0; j < entries; j++) {
+        struct lb_record *rec = (struct lb_record *)current_rec;
+        if (rec->tag == CB_TAG_FORWARD) {
+            struct cb_forward *fwd = (struct cb_forward *)rec;
+            return fwd->forward;
+        }
+        current_rec = (void *)((unsigned char *)current_rec + rec->size);
+    }
+    return 0;
+}
+
+/* Main Coreboot Scanner */
+static int parse_coreboot_memory(struct real_boot_params *zp)
+{
+    /* Coreboot places its static forwarders in these exact legacy ranges */
+    unsigned long scan_ranges[][2] = {
+        {0x0, 0x1000},
+        {0xF0000, 0x100000}
+    };
+    int i;
+    uint64_t cbmem_target = 0;
+
+    /* Step 1: Scan safe low memory to find the LBIO Forwarder */
+    for (i = 0; i < 2; i++) {
+        unsigned long current = scan_ranges[i][0];
+        unsigned long end = scan_ranges[i][1];
+
+        for (; current < end; current += 16) {
+            void *vaddr = memremap(current, PAGE_SIZE_4K, MEMREMAP_WB);
+            if (!vaddr) continue;
+
+            struct lb_header *header = (struct lb_header *)vaddr;
+            if (header->signature[0] == 'L' && header->signature[1] == 'B' &&
+                header->signature[2] == 'I' && header->signature[3] == 'O') {
+
+                /* Case A: The full memory map is sitting right here in low memory */
+                if (extract_e820_from_lbio(vaddr, zp) == 0) {
+                    memunmap(vaddr);
+                    return 0;
+                }
+
+                /* Case B: We found the forwarder tag pointing to the real table */
+                cbmem_target = check_for_forwarder(vaddr);
+                if (cbmem_target != 0) {
+                    printk(KERN_INFO "kexec: Found Coreboot forwarder to high CBMEM at physical 0x%llx\n", cbmem_target);
                 }
             }
-        }
-    }
-
-    if (scan_top == 0) {
-        /* Fallback if host_boot_params is missing: assume 4GB boundary */
-        scan_top = 0xFFFFFFFFULL;
-    }
-
-    /* We only need to scan the top 64MB downwards; CBMEM is always tucked right at the top */
-    scan_floor = scan_top - (64 * 1024 * 1024);
-
-    /* Align to 4KiB page boundary, step one page down, and begin loop */
-    current_page = (scan_top & ~0xFFFUL) - 0x1000;
-
-    while (current_page > scan_floor && current_page > 0) {
-        /* Safely map the 4K page. MEMREMAP_WB allows cached reads. */
-        void *vaddr = memremap(current_page, PAGE_SIZE_4K, MEMREMAP_WB);
-        if (!vaddr) {
-            current_page -= 0x1000;
-            continue;
-        }
-
-        struct lb_header *header = (struct lb_header *)vaddr;
-
-        /* Step 2: Check for "LBIO" magic signature */
-        if (header->signature[0] == 'L' && header->signature[1] == 'B' &&
-            header->signature[2] == 'I' && header->signature[3] == 'O') {
-
-            unsigned long table_ptr = current_page + header->header_bytes;
-            uint32_t entries = header->table_entries;
-            uint32_t j;
-
-            printk(KERN_INFO "kexec: Found Coreboot LBIO table at high memory (0x%lx)\n", current_page);
-
-            /* Unmap the header page before we map the table to avoid leaks */
             memunmap(vaddr);
-
-            /* Safely map the record table area */
-            void *table_vaddr = memremap(table_ptr, header->table_bytes, MEMREMAP_WB);
-            if (!table_vaddr) return -1;
-
-            void *current_rec_vaddr = table_vaddr;
-
-            /* Step 3: Iterate through lb_records */
-            for (j = 0; j < entries; j++) {
-                struct lb_record *rec = (struct lb_record *)current_rec_vaddr;
-
-                if (rec->tag == CB_TAG_MEMORY) {
-                    struct lb_memory *mem = (struct lb_memory *)rec;
-                    int num_ranges = (mem->size - sizeof(struct lb_memory)) / sizeof(struct lb_memory_range);
-                    int k;
-
-                    if (num_ranges > 112) num_ranges = 112;
-
-                    zp->e820_entries = num_ranges;
-                    struct e820_entry *e820 = (struct e820_entry *)zp->e820_table;
-
-                    for (k = 0; k < num_ranges; k++) {
-                        e820[k].addr = mem->map[k].start;
-                        e820[k].size = mem->map[k].size;
-                        e820[k].type = mem->map[k].type;
-                    }
-
-                    printk(KERN_INFO "kexec: Successfully populated %d E820 entries from lb_memory\n", num_ranges);
-
-                    memunmap(table_vaddr);
-                    return 0; /* Success */
-                }
-                current_rec_vaddr = (void *)((unsigned char *)current_rec_vaddr + rec->size);
-            }
-            memunmap(table_vaddr);
-            return -1; /* Found LBIO but no memory tag */
+            if (cbmem_target != 0) break;
         }
-
-        memunmap(vaddr);
-        current_page -= 0x1000;
+        if (cbmem_target != 0) break;
     }
 
-    return -1; /* Not found */
+    /* Step 2: If we found a forwarder, teleport exactly to that high memory address */
+    if (cbmem_target != 0) {
+        /* Map a 64KB chunk because the main CBMEM table is larger than 4KB */
+        void *high_vaddr = memremap(cbmem_target, 65536, MEMREMAP_WB);
+        if (high_vaddr) {
+            int ret = extract_e820_from_lbio(high_vaddr, zp);
+            memunmap(high_vaddr);
+            if (ret == 0) return 0;
+        }
+    }
+
+    return -1; /* Failed to find the memory tag */
 }
 
 static int setup_zero_page(void)
@@ -394,7 +411,7 @@ static int setup_zero_page(void)
     host_boot_params = (void *)ptr_kallsyms_lookup_name("boot_params");
 
     /* 1. Try the Coreboot Smart Scan First */
-    if (parse_coreboot_memory(zp, host_boot_params) == 0) {
+    if (parse_coreboot_memory(zp) == 0) {
         /* Successfully extracted the ground-truth memory map directly from Coreboot! */
     }
     /* 2. Fallback to replicating the host kernel's existing E820 */
