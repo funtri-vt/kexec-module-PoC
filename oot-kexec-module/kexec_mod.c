@@ -768,7 +768,7 @@ static long kexec_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
             ret = setup_zero_page();
             if (ret) return ret;
-
+            mdelay(2000);
             if (ptr_migrate_to_reboot_cpu) ptr_migrate_to_reboot_cpu();
             
             /* BARE-METAL UPGRADE: Re-enabling ptr_device_shutdown to properly shutdown devices.*/
