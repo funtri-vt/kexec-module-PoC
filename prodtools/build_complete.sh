@@ -214,6 +214,14 @@ else
     sed -i 's/# CONFIG_STATIC is not set/CONFIG_STATIC=y/' .config
     sed -i 's/CONFIG_TC=y/# CONFIG_TC is not set/' .config
 
+    echo "CONFIG_BLKID=y" >> .config
+    echo "CONFIG_FEATURE_BLKID_TYPE=y" >> .config
+    echo "CONFIG_VOLUMEID=y" >> .config
+    echo "CONFIG_FEATURE_VOLUMEID_EXT=y" >> .config
+    echo "CONFIG_FEATURE_VOLUMEID_PARTITION=y" >> .config
+
+    make olddefconfig
+    
     echo "  [*] Compiling BusyBox binary..."
     make -j"$CORES"
 
