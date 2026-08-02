@@ -174,6 +174,9 @@ else
     ./scripts/config --disable CONFIG_DRM_AMDGPU
     ./scripts/config --disable CONFIG_FRAMEBUFFER_CONSOLE
     
+    ./scripts/config --enable CONFIG_COREBOOT_TABLE
+    ./scripts/config --enable CONFIG_GOOG_COREBOOT_TABLE
+
     # Keep Input enabled in case we add emergency debug shells
     ./scripts/config --enable CONFIG_USB_SUPPORT
     ./scripts/config --enable CONFIG_USB_XHCI_HCD
