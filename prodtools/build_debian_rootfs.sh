@@ -66,7 +66,7 @@ trap cleanup EXIT
 echo "[*] Step 1: Creating 1.5GB sparse image file..."
 # We create a raw ext4 filesystem (no partition table) because it will be dd'd directly into a GPT partition later.
 truncate -s 1500M "$IMAGE_FILE"
-mkfs.ext4 -F -O ^metadata_csum,^has_journal "$IMAGE_FILE"
+mkfs.ext4 -F -O ^metadata_csum,^has_journal -L DEB_ROOT "$IMAGE_FILE"
 
 # --- STEP 2: MOUNT IMAGE ---
 echo "[*] Step 2: Mounting image to $MOUNT_DIR..."

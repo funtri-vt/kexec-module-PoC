@@ -197,8 +197,10 @@ echo "Sleeping for five seconds to give enumeration time..."
 sleep 5
 TARGET_DEV=""
 for i in $(seq 1 15); do
-    TARGET_DEV=$(blkid -t PARTLABEL="execboot_rootfs:debian" -o device | head -n1)
-    [ -n "$TARGET_DEV" ] && break
+    TARGET_DEV=$(blkid | grep "DEB_ROOT" | head -n1 | cut -d: -f1)
+    if [ -n "$TARGET_DEV" ] then
+        echo "[AUTOMATON] FOund DEB_ROOT at: $TARGET_DEV"
+    fi
     sleep 1
 done
 
