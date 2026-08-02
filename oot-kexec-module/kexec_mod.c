@@ -17,6 +17,7 @@
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
+#include <linux/io.h>
 #include <linux/fs.h>
 #include <linux/uaccess.h>
 #include <linux/miscdevice.h>
@@ -308,7 +309,14 @@ static int parse_coreboot_memory(struct real_boot_params *zp, void *host_boot_pa
     current_page = (scan_top & ~0xFFFUL) - 0x1000;
 
     while (current_page > scan_floor && current_page > 0) {
-        struct lb_header *header = (struct lb_header *)phys_to_virt(current_page);
+        /* Safely map the 4K page. MEMREMAP_WB allows cached reads. */
+        void *vaddr = memremap(current_page, PAGE_SIZE_4K, MEMREMAP_WB);
+        if (!vaddr) {
+            current_page -= 0x1000;
+            continue;
+        }
+
+        struct lb_header *header = (struct lb_header *)vaddr;
 
         /* Step 2: Check for "LBIO" magic signature */
         if (header->signature[0] == 'L' && header->signature[1] == 'B' &&
@@ -320,22 +328,29 @@ static int parse_coreboot_memory(struct real_boot_params *zp, void *host_boot_pa
 
             printk(KERN_INFO "kexec: Found Coreboot LBIO table at high memory (0x%lx)\n", current_page);
 
-            /* Step 3: Iterate through lb_records to find the lb_memory tag */
+            /* Unmap the header page before we map the table to avoid leaks */
+            memunmap(vaddr);
+
+            /* Safely map the record table area */
+            void *table_vaddr = memremap(table_ptr, header->table_bytes, MEMREMAP_WB);
+            if (!table_vaddr) return -1;
+
+            void *current_rec_vaddr = table_vaddr;
+
+            /* Step 3: Iterate through lb_records */
             for (j = 0; j < entries; j++) {
-                struct lb_record *rec = (struct lb_record *)phys_to_virt(table_ptr);
+                struct lb_record *rec = (struct lb_record *)current_rec_vaddr;
 
                 if (rec->tag == CB_TAG_MEMORY) {
                     struct lb_memory *mem = (struct lb_memory *)rec;
                     int num_ranges = (mem->size - sizeof(struct lb_memory)) / sizeof(struct lb_memory_range);
                     int k;
 
-                    /* Prevent E820 table overflow */
                     if (num_ranges > 112) num_ranges = 112;
 
                     zp->e820_entries = num_ranges;
                     struct e820_entry *e820 = (struct e820_entry *)zp->e820_table;
 
-                    /* Populate the standard boot_params E820 table */
                     for (k = 0; k < num_ranges; k++) {
                         e820[k].addr = mem->map[k].start;
                         e820[k].size = mem->map[k].size;
@@ -343,12 +358,17 @@ static int parse_coreboot_memory(struct real_boot_params *zp, void *host_boot_pa
                     }
 
                     printk(KERN_INFO "kexec: Successfully populated %d E820 entries from lb_memory\n", num_ranges);
+
+                    memunmap(table_vaddr);
                     return 0; /* Success */
                 }
-                table_ptr += rec->size; /* Advance to next record */
+                current_rec_vaddr = (void *)((unsigned char *)current_rec_vaddr + rec->size);
             }
+            memunmap(table_vaddr);
+            return -1; /* Found LBIO but no memory tag */
         }
-        /* Step 4: Step downward by exactly one 4KiB page */
+
+        memunmap(vaddr);
         current_page -= 0x1000;
     }
 
