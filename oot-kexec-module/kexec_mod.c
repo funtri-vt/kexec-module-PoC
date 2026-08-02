@@ -341,46 +341,51 @@ static int parse_coreboot_memory(struct real_boot_params *zp)
 {
     /* Coreboot places its static forwarders in these exact legacy ranges */
     unsigned long scan_ranges[][2] = {
-        {0x0, 0x1000},
-        {0xF0000, 0x100000}
+        {0x0, 0x1000},          /* 4KB at the very bottom of RAM */
+        {0xF0000, 0x100000}     /* 64KB legacy VGA/BIOS hole */
     };
     int i;
     uint64_t cbmem_target = 0;
 
     /* Step 1: Scan safe low memory to find the LBIO Forwarder */
     for (i = 0; i < 2; i++) {
-        unsigned long current_addr = scan_ranges[i][0];
-        unsigned long end = scan_ranges[i][1];
+        unsigned long start_phys = scan_ranges[i][0];
+        unsigned long end_phys = scan_ranges[i][1];
+        unsigned long size = end_phys - start_phys;
+        unsigned long offset;
 
-        for (; current_addr < end; current_addr += 16) {
-            void *vaddr = memremap(current_addr, PAGE_SIZE_4K, MEMREMAP_WB);
-            if (!vaddr) continue;
+        /* Map the ENTIRE memory region exactly once, safely page-aligned */
+        void *vaddr_base = memremap(start_phys, size, MEMREMAP_WB);
+        if (!vaddr_base) continue;
 
+        /* Scan through our safely mapped virtual memory in 16-byte steps */
+        for (offset = 0; offset < size; offset += 16) {
+            void *vaddr = (void *)((unsigned char *)vaddr_base + offset);
             struct lb_header *header = (struct lb_header *)vaddr;
+
             if (header->signature[0] == 'L' && header->signature[1] == 'B' &&
                 header->signature[2] == 'I' && header->signature[3] == 'O') {
 
-                /* Case A: The full memory map is sitting right here in low memory */
+                /* Case A: The full memory map is sitting right here */
                 if (extract_e820_from_lbio(vaddr, zp) == 0) {
-                    memunmap(vaddr);
+                    memunmap(vaddr_base);
                     return 0;
                 }
 
-                /* Case B: We found the forwarder tag pointing to the real table */
+                /* Case B: We found the forwarder pointing to the real table */
                 cbmem_target = check_for_forwarder(vaddr);
                 if (cbmem_target != 0) {
                     printk(KERN_INFO "kexec: Found Coreboot forwarder to high CBMEM at physical 0x%llx\n", cbmem_target);
+                    break; /* Break inner loop */
                 }
             }
-            memunmap(vaddr);
-            if (cbmem_target != 0) break;
         }
-        if (cbmem_target != 0) break;
+        memunmap(vaddr_base);
+        if (cbmem_target != 0) break; /* Break outer loop */
     }
 
-    /* Step 2: If we found a forwarder, teleport exactly to that high memory address */
+    /* Step 2: Teleport exactly to the high memory table */
     if (cbmem_target != 0) {
-        /* Map a 64KB chunk because the main CBMEM table is larger than 4KB */
         void *high_vaddr = memremap(cbmem_target, 65536, MEMREMAP_WB);
         if (high_vaddr) {
             int ret = extract_e820_from_lbio(high_vaddr, zp);
