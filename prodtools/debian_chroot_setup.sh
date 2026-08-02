@@ -177,6 +177,7 @@ cat << 'EOF' > /etc/systemd/system/firstboot-setup.service
 [Unit]
 Description=First Boot TUI Setup Script
 After=network.target NetworkManager.service systemd-user-sessions.service
+Before=getty@tty1.service
 
 [Service]
 Type=oneshot
@@ -185,6 +186,8 @@ StandardInput=tty-force
 StandardOutput=inherit
 StandardError=inherit
 TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
 TimeoutSec=0
 
 [Install]
