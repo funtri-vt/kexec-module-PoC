@@ -193,6 +193,8 @@ fi
 
 # PRODUCTION: Dynamically locate, mount, and kexec into the Debian partition
 echo "[AUTOMATON] Searching for Debian rootfs partition..."
+echo "Sleeping for five seconds to give enumeration time..."
+sleep 5
 TARGET_DEV=""
 for i in $(seq 1 15); do
     TARGET_DEV=$(blkid -t PARTLABEL="execboot_rootfs:debian" -o device | head -n1)
