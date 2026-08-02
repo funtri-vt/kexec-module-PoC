@@ -349,11 +349,11 @@ static int parse_coreboot_memory(struct real_boot_params *zp)
 
     /* Step 1: Scan safe low memory to find the LBIO Forwarder */
     for (i = 0; i < 2; i++) {
-        unsigned long current = scan_ranges[i][0];
+        unsigned long current_addr = scan_ranges[i][0];
         unsigned long end = scan_ranges[i][1];
 
-        for (; current < end; current += 16) {
-            void *vaddr = memremap(current, PAGE_SIZE_4K, MEMREMAP_WB);
+        for (; current_addr < end; current_addr += 16) {
+            void *vaddr = memremap(current_addr, PAGE_SIZE_4K, MEMREMAP_WB);
             if (!vaddr) continue;
 
             struct lb_header *header = (struct lb_header *)vaddr;
