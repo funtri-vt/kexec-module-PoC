@@ -65,8 +65,9 @@ struct e820_entry {
 #define CB_SIGNATURE 0x4F49424C
 #define CB_TAG_MEMORY 0x0001
 
-struct cb_header {
-    uint32_t signature;
+/* Smart-Scan Coreboot Header */
+struct lb_header {
+    uint8_t  signature[4]; /* "LBIO" */
     uint32_t header_bytes;
     uint32_t header_checksum;
     uint32_t table_bytes;
@@ -74,21 +75,21 @@ struct cb_header {
     uint32_t table_entries;
 } __attribute__((packed));
 
-struct cb_record {
+struct lb_record {
     uint32_t tag;
     uint32_t size;
 } __attribute__((packed));
 
-struct cb_memory_range {
+struct lb_memory_range {
     uint64_t start;
     uint64_t size;
     uint32_t type;
 } __attribute__((packed));
 
-struct cb_memory {
+struct lb_memory {
     uint32_t tag;
     uint32_t size;
-    struct cb_memory_range map[0];
+    struct lb_memory_range map[0];
 } __attribute__((packed));
 
 /* Declare the labels compiled inside our global assembly block */
@@ -273,59 +274,84 @@ struct real_boot_params {
     /* 0x2d0 */ uint8_t e820_table[112 * 20];   /* 0x2d0 */
 } __attribute__((packed));
 
-static int parse_coreboot_memory(struct real_boot_params *zp)
+static int parse_coreboot_memory(struct real_boot_params *zp, void *host_boot_params)
 {
-    unsigned long scan_ranges[][2] = {
-        {0x0, 0x1000},
-        {0xF0000, 0x100000}
-    };
-    int i;
+    uint64_t scan_top = 0;
+    unsigned long current_page;
+    unsigned long scan_floor;
 
-    for (i = 0; i < 2; i++) {
-        unsigned long current = scan_ranges[i][0];
-        unsigned long end = scan_ranges[i][1];
-
-        /* Align scan to 16-byte boundaries as per Coreboot spec */
-        for (; current < end; current += 16) {
-            struct cb_header *header = (struct cb_header *)phys_to_virt(current);
-
-            if (header->signature == CB_SIGNATURE) {
-                unsigned long table_ptr = current + header->header_bytes;
-                uint32_t entries = header->table_entries;
-                uint32_t j;
-
-                printk(KERN_INFO "kexec: Found Coreboot table at physical 0x%lx\n", current);
-
-                for (j = 0; j < entries; j++) {
-                    struct cb_record *rec = (struct cb_record *)phys_to_virt(table_ptr);
-
-                    if (rec->tag == CB_TAG_MEMORY) {
-                        struct cb_memory *mem = (struct cb_memory *)rec;
-                        int num_ranges = (mem->size - sizeof(struct cb_memory)) / sizeof(struct cb_memory_range);
-                        int k;
-
-                        /* Cap entries to standard e820 max to avoid buffer overflow */
-                        if (num_ranges > 112) num_ranges = 112;
-
-                        zp->e820_entries = num_ranges;
-                        struct e820_entry *e820 = (struct e820_entry *)zp->e820_table;
-
-                        for (k = 0; k < num_ranges; k++) {
-                            e820[k].addr = mem->map[k].start;
-                            e820[k].size = mem->map[k].size;
-
-                            /* Coreboot types cleanly map 1:1 to E820 types for 1 through 5 */
-                            e820[k].type = mem->map[k].type;
-                        }
-
-                        printk(KERN_INFO "kexec: Successfully populated %d E820 entries from Coreboot lb_memory\n", num_ranges);
-                        return 0; /* Success */
-                    }
-                    table_ptr += rec->size;
+    /* Step 1: Read the host E820 map to find the highest usable RAM region beneath 4GB */
+    if (host_boot_params) {
+        uint8_t entries = *(uint8_t *)((unsigned char *)host_boot_params + 0x1e8);
+        struct e820_entry *table = (struct e820_entry *)((unsigned char *)host_boot_params + 0x2d0);
+        int i;
+        for (i = 0; i < entries; i++) {
+            if (table[i].type == 1) { /* E820_TYPE_RAM */
+                uint64_t end_addr = table[i].addr + table[i].size;
+                /* Cap it at 4GB (0xFFFFFFFF) */
+                if (end_addr <= 0xFFFFFFFFULL && end_addr > scan_top) {
+                    scan_top = end_addr;
                 }
             }
         }
     }
+
+    if (scan_top == 0) {
+        /* Fallback if host_boot_params is missing: assume 4GB boundary */
+        scan_top = 0xFFFFFFFFULL;
+    }
+
+    /* We only need to scan the top 64MB downwards; CBMEM is always tucked right at the top */
+    scan_floor = scan_top - (64 * 1024 * 1024);
+
+    /* Align to 4KiB page boundary, step one page down, and begin loop */
+    current_page = (scan_top & ~0xFFFUL) - 0x1000;
+
+    while (current_page > scan_floor && current_page > 0) {
+        struct lb_header *header = (struct lb_header *)phys_to_virt(current_page);
+
+        /* Step 2: Check for "LBIO" magic signature */
+        if (header->signature[0] == 'L' && header->signature[1] == 'B' &&
+            header->signature[2] == 'I' && header->signature[3] == 'O') {
+
+            unsigned long table_ptr = current_page + header->header_bytes;
+            uint32_t entries = header->table_entries;
+            uint32_t j;
+
+            printk(KERN_INFO "kexec: Found Coreboot LBIO table at high memory (0x%lx)\n", current_page);
+
+            /* Step 3: Iterate through lb_records to find the lb_memory tag */
+            for (j = 0; j < entries; j++) {
+                struct lb_record *rec = (struct lb_record *)phys_to_virt(table_ptr);
+
+                if (rec->tag == CB_TAG_MEMORY) {
+                    struct lb_memory *mem = (struct lb_memory *)rec;
+                    int num_ranges = (mem->size - sizeof(struct lb_memory)) / sizeof(struct lb_memory_range);
+                    int k;
+
+                    /* Prevent E820 table overflow */
+                    if (num_ranges > 112) num_ranges = 112;
+
+                    zp->e820_entries = num_ranges;
+                    struct e820_entry *e820 = (struct e820_entry *)zp->e820_table;
+
+                    /* Populate the standard boot_params E820 table */
+                    for (k = 0; k < num_ranges; k++) {
+                        e820[k].addr = mem->map[k].start;
+                        e820[k].size = mem->map[k].size;
+                        e820[k].type = mem->map[k].type;
+                    }
+
+                    printk(KERN_INFO "kexec: Successfully populated %d E820 entries from lb_memory\n", num_ranges);
+                    return 0; /* Success */
+                }
+                table_ptr += rec->size; /* Advance to next record */
+            }
+        }
+        /* Step 4: Step downward by exactly one 4KiB page */
+        current_page -= 0x1000;
+    }
+
     return -1; /* Not found */
 }
 
@@ -344,38 +370,40 @@ static int setup_zero_page(void)
     memcpy(zp->setup_header, kernel_setup + 0x1f1, 0x9f); // Copy verified standard setup header size
 
 
-    /* --- BARE-METAL UPGRADE: HOST E820 REPLICATION --- */
+    /* --- BARE-METAL UPGRADE: HOST E820 REPLICATION & CBMEM --- */
     host_boot_params = (void *)ptr_kallsyms_lookup_name("boot_params");
-    if (host_boot_params) {
+
+    /* 1. Try the Coreboot Smart Scan First */
+    if (parse_coreboot_memory(zp, host_boot_params) == 0) {
+        /* Successfully extracted the ground-truth memory map directly from Coreboot! */
+    }
+    /* 2. Fallback to replicating the host kernel's existing E820 */
+    else if (host_boot_params) {
         memcpy(zp->e820_table, (unsigned char *)host_boot_params + 0x2d0, sizeof(zp->e820_table));
         zp->e820_entries = *(uint8_t *)((unsigned char *)host_boot_params + 0x1e8);
-        printk(KERN_EMERG "kexec: Successfully replicated host E820 memory map (%d entries)\n", zp->e820_entries);
-    } else {
-        /* NEW LOGIC: Attempt to parse Coreboot lb_memory before falling back */
-        if (parse_coreboot_memory(zp) == 0) {
-            /* Successfully built from Coreboot */
-        } else {
-            /* FALLBACK: 256MB Stub */
-            uint64_t *entry;
-            zp->e820_entries = 4;
-            printk(KERN_WARNING "kexec: Could not find boot_params or Coreboot tables. Falling back to 256MB E820 stub!\n");
+        printk(KERN_EMERG "kexec: Replicated host E820 memory map (%d entries)\n", zp->e820_entries);
+    }
+    /* 3. Absolute Disaster Fallback: The 256MB Stub */
+    else {
+        uint64_t *entry;
+        zp->e820_entries = 4;
+        printk(KERN_WARNING "kexec: Could not find boot_params or Coreboot tables. Falling back to 256MB E820 stub!\n");
 
-            /* Entry 0: Usable Low RAM */
-            entry = (uint64_t *)(zp->e820_table);
-            entry[0] = 0x0ULL; entry[1] = 0x9FC00ULL; *((uint32_t *)(entry + 2)) = 1;
+        /* Entry 0: Usable Low RAM */
+        entry = (uint64_t *)(zp->e820_table);
+        entry[0] = 0x0ULL; entry[1] = 0x9FC00ULL; *((uint32_t *)(entry + 2)) = 1;
 
             /* Entry 1: Reserved */
-            entry = (uint64_t *)(zp->e820_table + 20);
-            entry[0] = 0x9FC00ULL; entry[1] = 0x400ULL; *((uint32_t *)(entry + 2)) = 2;
+        entry = (uint64_t *)(zp->e820_table + 20);
+        entry[0] = 0x9FC00ULL; entry[1] = 0x400ULL; *((uint32_t *)(entry + 2)) = 2;
 
-            /* Entry 2: Reserved */
-            entry = (uint64_t *)(zp->e820_table + 40);
-            entry[0] = 0xF0000ULL; entry[1] = 0x10000ULL; *((uint32_t *)(entry + 2)) = 2;
+        /* Entry 2: Reserved */
+        entry = (uint64_t *)(zp->e820_table + 40);
+        entry[0] = 0xF0000ULL; entry[1] = 0x10000ULL; *((uint32_t *)(entry + 2)) = 2;
 
-            /* Entry 3: Usable High RAM */
-            entry = (uint64_t *)(zp->e820_table + 60);
-            entry[0] = 0x100000ULL; entry[1] = 0xFEE0000ULL; *((uint32_t *)(entry + 2)) = 1;
-        }
+        /* Entry 3: Usable High RAM */
+        entry = (uint64_t *)(zp->e820_table + 60);
+        entry[0] = 0x100000ULL; entry[1] = 0xFEE0000ULL; *((uint32_t *)(entry + 2)) = 1;
     }
 
     /* --- BARE-METAL UPGRADE: LINEAR FRAMEBUFFER DIAGNOSTICS --- */
