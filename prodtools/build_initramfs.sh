@@ -177,7 +177,7 @@ EXTRA_BOOT_ARGS=""
 
 if [ "$BOARD_ID" = "grunt" ]; then # this might be useful later, but make sure to set them up individually?: || [ "$BOARD_ID" = "zork" ] || [ "$BOARD_ID" = "treeya" ]
     # construct boot args to make apuart console work for AMD boards
-    EXTRA_BOOT_ARGS="earlycon=uart8250,mmio32,0xfedc6000,4430n8 console=uart,mmio32,0xfedc6000,4430n8 ignore_loglevel board_id=$BOARD_ID panic=10 amd_iommu=off amdgpu.sg_display=0 amdgpu.aspm=0 amdgpu.runpm=0 amdgpu.cg_mask=0 amdgpu.pg_mask=0 amdgpu.dc=0"
+    EXTRA_BOOT_ARGS="earlycon=uart8250,mmio32,0xfedc6000,4430n8 console=uart,mmio32,0xfedc6000,4430n8 ignore_loglevel board_id=$BOARD_ID panic=10 modprobe.blacklist=amdgpu"
 fi
 
 
