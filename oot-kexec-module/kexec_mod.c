@@ -27,6 +27,7 @@
 #include <linux/kallsyms.h>
 #include <linux/screen_info.h>
 #include <linux/delay.h>
+#include <linux/pci.h>
 #include <asm/io.h>
 #include <asm/pgtable.h>
 #include <asm/set_memory.h>
@@ -813,8 +814,20 @@ static long kexec_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
             mdelay(2000);
             if (ptr_migrate_to_reboot_cpu) ptr_migrate_to_reboot_cpu();
             
+            /* BARE-METAL UPGRADE: Shield the GPU from the shutdown loop */
+            struct pci_dev *gpu_dev = pci_get_device(0x1002, 0x98E4, NULL);
+            if (gpu_dev) {
+                if (gpu_dev->dev.driver) {
+                    printk(KERN_EMERG "kexec: Intercepted AMD GPU! Nullifying shutdown hook...\n");
+                    /* Sabotage the shutdown pointer so the kernel skips it */
+                    gpu_dev->dev.driver->shutdown = NULL;
+                }
+                /* Decrement the reference count so we don't leak memory */
+                pci_dev_put(gpu_dev);
+            }
+
             /* BARE-METAL UPGRADE: Re-enabling ptr_device_shutdown to properly shutdown devices.*/
-            // if (ptr_device_shutdown) ptr_device_shutdown();
+            if (ptr_device_shutdown) ptr_device_shutdown();
             
             /* Attempt multiple SMP halt fallback strategies */
             if (ptr_smp_send_stop) {
