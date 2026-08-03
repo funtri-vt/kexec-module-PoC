@@ -177,7 +177,7 @@ EXTRA_BOOT_ARGS=""
 
 if [ "$BOARD_ID" = "grunt" ]; then # this might be useful later, but make sure to set them up individually?: || [ "$BOARD_ID" = "zork" ] || [ "$BOARD_ID" = "treeya" ]
     # construct boot args to make apuart console work for AMD boards
-    EXTRA_BOOT_ARGS="earlycon=uart8250,mmio32,0xfedc6000,4430n8 console=uart,mmio32,0xfedc6000,4430n8 ignore_loglevel board_id=$BOARD_ID panic=10 pm_async=0 amdgpu.dpm=0 amdgpu.ppfeaturemask=0 iommu=pt amdgpu.sg_display=0"
+    EXTRA_BOOT_ARGS="earlycon=uart8250,mmio32,0xfedc6000,4430n8 console=uart,mmio32,0xfedc6000,4430n8 ignore_loglevel board_id=$BOARD_ID panic=10 amd_iommu=off amdgpu.sg_display=0 amdgpu.aspm=0 amdgpu.runpm=0 amdgpu.dc=0"
 fi
 
 
@@ -234,6 +234,10 @@ echo "[AUTOMATON] Loading kernel: $TARGET_KERNEL"
 
 echo "[AUTOMATON] Unmounting target partition..."
 umount /mnt/debian
+
+echo "[AUTOMATON] Cleanly unbinding framebuffers before kexec jump..."
+echo "efi-framebuffer.0" > /sys/bus/platform/drivers/efi-framebuffer/unbind 2>/dev/null || true
+echo "simple-framebuffer.0" > /sys/bus/platform/drivers/simple-framebuffer/unbind 2>/dev/null || true
 
 # Execute the native handoff (this properly shuts down the UART!)
 echo "[AUTOMATON] Executing native kexec jump NOW."

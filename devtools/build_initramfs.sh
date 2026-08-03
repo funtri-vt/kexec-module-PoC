@@ -194,6 +194,10 @@ fi
     --initrd=/payload/initramfs.cpio.gz \
     --command-line="root=/dev/ram0 rw debug loglevel=8 reset_devices amdgpu.sg_display=0 amdgpu.runpm=0 amdgpu.aspm=0 amdgpu.dc=0 amdgpu.dpm=0 amdgpu.bapm=0 amdgpu.audio=0 video=efifb:off video=vesafb:off video=simplefb:off sysfb_disable=1 drm.debug=0x1e $EXTRA_BOOT_ARGS"
 
+echo "[AUTOMATON] Cleanly unbinding framebuffers before kexec jump..."
+echo "efi-framebuffer.0" > /sys/bus/platform/drivers/efi-framebuffer/unbind 2>/dev/null || true
+echo "simple-framebuffer.0" > /sys/bus/platform/drivers/simple-framebuffer/unbind 2>/dev/null || true
+
 # Execute the native handoff (this properly shuts down the UART!)
 echo "[AUTOMATON] Executing native kexec jump NOW."
 /sbin/kexec -e
