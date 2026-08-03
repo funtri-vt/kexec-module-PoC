@@ -814,7 +814,7 @@ static long kexec_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
             if (ptr_migrate_to_reboot_cpu) ptr_migrate_to_reboot_cpu();
             
             /* BARE-METAL UPGRADE: Re-enabling ptr_device_shutdown to properly shutdown devices.*/
-            if (ptr_device_shutdown) ptr_device_shutdown();
+            // if (ptr_device_shutdown) ptr_device_shutdown();
             
             /* Attempt multiple SMP halt fallback strategies */
             if (ptr_smp_send_stop) {
