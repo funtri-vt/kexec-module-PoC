@@ -1,0 +1,57 @@
+name: (prod) (ci) Build and Inject Kexec Shimboot Image (grunt)
+
+on:
+  push:
+    branches: [ "main", "dev" ]
+  workflow_dispatch:
+
+jobs:
+  build-pipeline-prod:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          # Install compilation toolchains, partition mappers, and cgpt (vboot-utils)
+          sudo apt-get install -y build-essential libncurses-dev bison flex libssl-dev libelf-dev autoconf automake libtool bc kpartx vboot-utils cgpt cpio debootstrap
+
+      - name: Download Base Shimboot Image
+        run: |
+          wget -O shimboot_grunt.zip https://github.com/ading2210/shimboot/releases/latest/download/shimboot_grunt.zip
+          unzip ./shimboot_grunt.zip
+
+      - name: Get Current Date for Cache Key
+        id: cache-date
+        run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+
+      - name: Cache Heavy Compilation Assets
+        id: toolchain-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            intermediate_kernel/
+            busybox/
+            kexec-tools/
+          key: toolchain-cache-prod-${{ runner.os }}-x86_64-${{ steps.cache-date.outputs.date }}
+
+      - name: Execute Master Build Orchestrator
+        run: |
+          chmod +x prodtools/build_complete.sh
+          chmod +x prodtools/setup_kexec_tools.sh
+          chmod +x prodtools/final_build_step.sh
+          chmod +x prodtools/build_initramfs.sh
+          chmod +x prodtools/inject_to_shim.sh
+          chmod +x prodtools/detect_version_magic.sh
+          # Run the master orchestrator, passing the cache-hit variable so it knows to skip building
+          sudo CACHE_HIT="${{ steps.toolchain-cache.outputs.cache-hit }}" BOARD=grunt ./prodtools/build_complete.sh
+
+      - name: Upload Patched Shimboot Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: patched-shimboot-image-ci
+          path: shimboot_grunt.bin
+          if-no-files-found: error
