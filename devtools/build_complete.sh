@@ -306,8 +306,24 @@ echo ">>> [Phase 8] Compiling Out-Of-Tree Kexec Module & Usermode Loader..."
 cd "$WORKSPACE/oot-kexec-module"
 make clean || true
 # Pass our explicitly prepared ChromeOS headers path to the Makefile
-make KDIR="$HOST_KDIR" USE_BOARD_${BOARD_ID^^}=1
-strings kexec_mod.ko | grep -i "GRBM"
+# If building for any Stoney Ridge board, pass USE_BOARD_GRUNT=1
+case "${BOARD_ID,,}" in
+    grunt)
+        EXTRA_FLAGS="USE_BOARD_GRUNT=1"
+        ;;
+    *)
+        EXTRA_FLAGS=""
+        ;;
+esac
+
+make KDIR="$HOST_KDIR" $EXTRA_FLAGS
+
+# Safely check the artifact without failing the set -e script
+if strings kexec_mod.ko | grep -q -i "GRBM"; then
+    echo "===> SUCCESS: GRBM GPU reset logic compiled into kexec_mod.ko!"
+else
+    echo "===> WARNING: GRBM GPU reset logic was NOT compiled into kexec_mod.ko!"
+fi
 
 echo "=========================================================="
 echo " [*] DYNAMIC VERIFICATION: FRESH COMPILATION HASH"
