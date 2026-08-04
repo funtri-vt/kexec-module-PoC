@@ -309,7 +309,7 @@ make clean || true
 BOARD_HEADER="board_config.h"
 # Pass our explicitly prepared ChromeOS headers path to the Makefile
 # If building for any Stoney Ridge board, pass USE_BOARD_GRUNT=1
-case "${BOARD_ID,,}" in
+case "$BOARD" in
     grunt)
         echo "/* Auto-generated for Stoney Ridge family */" > "$BOARD_HEADER"
         echo "#define BOARD_NAME_GRUNT 1" >> "$BOARD_HEADER"

@@ -239,15 +239,10 @@ echo ">>> [Phase 8] Compiling Out-Of-Tree Kexec Module & Usermode Loader..."
 cd "$WORKSPACE/oot-kexec-module"
 make clean || true
 # Generate dynamic build header based on target board
-# Force board ID to lowercase using standard 'tr' (works in sh, dash, bash)
-BOARD_ID_LOWER=$(echo "$BOARD_ID" | tr '[:upper:]' '[:lower:]' | xargs)
-
 # Force board_config.h to be created in the current working directory absolute path
 BOARD_HEADER="$(pwd)/board_config.h"
 
-echo "===> DEBUG: BOARD_ID_LOWER is '$BOARD_ID_LOWER'"
-
-case "$BOARD_ID_LOWER" in
+case "$BOARD" in
     grunt)
         echo "/* Auto-generated for Stoney Ridge family */" > "$BOARD_HEADER"
         echo "#define BOARD_NAME_GRUNT 1" >> "$BOARD_HEADER"
@@ -259,10 +254,6 @@ esac
 
 # Flush memory buffers to disk
 sync
-
-# Print header contents to CI logs to verify creation
-echo "===> DEBUG: Contents of $BOARD_HEADER:"
-cat "$BOARD_HEADER"
 
 make KDIR="$HOST_KDIR"
 
