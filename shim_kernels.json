@@ -1,0 +1,317 @@
+{
+    "ambassador": {
+        "arch": "x86_64",
+        "branch": "stabilize-ambassador-13597.79.B-chromeos-4.19",
+        "commit": "cd4ba3cf503e1ea967385b2380cb89e295c03667",
+        "date": "2021-09-11 16:29:24 -0700",
+        "kernel_version": "4.19",
+        "manifest_branch": "stabilize-ambassador-13597.79.B",
+        "verstring": "4.19.155-26920-gcd4ba3cf503e"
+    },
+    "banon": {
+        "arch": "x86_64",
+        "branch": "factory-strago-7458.B-chromeos-3.18",
+        "commit": "475247cc71b98f77363b551428c64935e9c6c707",
+        "date": "2018-01-16 03:16:57 -0800",
+        "kernel_version": "3.18",
+        "manifest_branch": "factory-strago-7458.B",
+        "verstring": "3.18.0-07185-g475247c"
+    },
+    "brask": {
+        "arch": "x86_64",
+        "branch": "factory-brya-14517.B-chromeos-5.10",
+        "commit": "4db00c6d691c8b526e1448c95ffb5a47412e8f67",
+        "date": "2022-10-12 18:14:11 -0700",
+        "kernel_version": "5.10",
+        "manifest_branch": "factory-brya-14517.B",
+        "verstring": "5.10.99-14982-g4db00c6d691c"
+    },
+    "brya": {
+        "arch": "x86_64",
+        "branch": "factory-brya-14517.B-chromeos-5.10",
+        "commit": "0ca65d0fc1592411bd67ba6cfd832b81a37fb4c8",
+        "date": "2022-05-17 10:11:00 -0700",
+        "kernel_version": "5.10",
+        "manifest_branch": "factory-brya-14517.B",
+        "verstring": "5.10.99-14824-g0ca65d0fc159"
+    },
+    "coral": {
+        "arch": "x86_64",
+        "branch": "factory-coral-10122.B-chromeos-4.4",
+        "commit": "2559ad374aeb5c9d675017066e57ba0d3dfae4ba",
+        "date": "2018-12-25 02:15:52 -0800",
+        "kernel_version": "4.4",
+        "manifest_branch": "factory-coral-10122.B",
+        "verstring": "4.4.96-12113-g2559ad374aeb"
+    },
+    "corsola": {
+        "arch": "arm64",
+        "branch": "factory-corsola-15196.B-chromeos-5.15",
+        "commit": "65b187c79ae4ed0240b6a62e98e523f6dcafb536",
+        "date": null,
+        "kernel_version": "5.15",
+        "manifest_branch": "factory-corsola-15196.B",
+        "verstring": "5.15.74-12848-g65b187c79ae4"
+    },
+    "cyan": {
+        "arch": "x86_64",
+        "branch": "factory-strago-7458.B-chromeos-3.18",
+        "commit": "fcafe78f8a2b82062f39306544f23a25bd04e4af",
+        "date": "2018-10-09 03:36:13 -0700",
+        "kernel_version": "3.18",
+        "manifest_branch": "factory-strago-7458.B",
+        "verstring": "3.18.0-07188-gfcafe78f"
+    },
+    "dedede": {
+        "arch": "x86_64",
+        "branch": "factory-dedede-13683.B-chromeos-5.4",
+        "commit": "a9994f5cad40c3d2e32ddcee0fbb68ec506efe02",
+        "date": "2022-04-02 14:11:30 -0700",
+        "kernel_version": "5.4",
+        "manifest_branch": "factory-dedede-13683.B",
+        "verstring": "5.4.85-22138-ga9994f5cad40"
+    },
+    "edgar": {
+        "arch": "x86_64",
+        "branch": "factory-strago-7458.B-chromeos-3.18",
+        "commit": "682a4de02afb63306bd387e8d175bb1dad54e2dd",
+        "date": "2018-11-22 05:01:08 -0800",
+        "kernel_version": "3.18",
+        "manifest_branch": "factory-strago-7458.B",
+        "verstring": "3.18.0-07189-g682a4de"
+    },
+    "elm": {
+        "arch": "arm64",
+        "branch": "factory-oak-8182.B-chromeos-3.18",
+        "commit": "469043243431ee71a2645c4c86361a0ba63bc6c4",
+        "date": "2020-10-01 23:36:18 -0700",
+        "kernel_version": "3.18",
+        "manifest_branch": "factory-oak-8182.B",
+        "verstring": "3.18.0-12342-g469043243431"
+    },
+    "fizz": {
+        "arch": "x86_64",
+        "branch": "factory-fizz-10167.B-chromeos-4.4",
+        "commit": "b2642ed2c4066923b2111f41fee4930d409088e4",
+        "date": "2020-03-26 16:18:27 -0700",
+        "kernel_version": "4.4",
+        "manifest_branch": "factory-fizz-10167.B",
+        "verstring": "4.4.96-12205-gb2642ed2c406-dirty"
+    },
+    "grunt": {
+        "arch": "x86_64",
+        "branch": "factory-grunt-11164.B-chromeos-4.14",
+        "commit": "a53de141176ca64e8f37f30d27fbc7a99b5e8165",
+        "date": "2019-05-04 20:46:07 -0700",
+        "kernel_version": "4.14",
+        "manifest_branch": "factory-grunt-11164.B",
+        "verstring": "4.14.75-07790-ga53de141176c"
+    },
+    "hana": {
+        "arch": "arm64",
+        "branch": "factory-oak-8182.B-chromeos-3.18",
+        "commit": "d75f03c68cfcf75f19e6fafefbaf58a332ea995e",
+        "date": "2021-01-01 13:12:31 -0800",
+        "kernel_version": "3.18",
+        "manifest_branch": "factory-oak-8182.B",
+        "verstring": "3.18.0-12343-gd75f03c68cfc"
+    },
+    "hatch": {
+        "arch": "x86_64",
+        "branch": "factory-hatch-12692.B-chromeos-4.19",
+        "commit": "c17c68931bc53a04825001fbff75af0c5a4f35af",
+        "date": "2021-07-27 14:02:12 -0700",
+        "kernel_version": "4.19",
+        "manifest_branch": "factory-hatch-12692.B",
+        "verstring": "4.19.84-16188-gc17c68931bc53"
+    },
+    "jacuzzi": {
+        "arch": "arm64",
+        "branch": "factory-kukui-12587.B-chromeos-4.19",
+        "commit": "4af3278c5c8f7133b6fdf4fa216b4332669482c4",
+        "date": "2021-01-20 12:56:35 -0800",
+        "kernel_version": "4.19",
+        "manifest_branch": "factory-kukui-12587.B",
+        "verstring": "4.19.78-07652-g4af3278c5c8f"
+    },
+    "jacuzzi_makomo": {
+        "arch": "arm64",
+        "branch": "factory-kukui-12587.B-chromeos-4.19",
+        "commit": "a7cec41239350befc7b2487e2add46bf06cd3653",
+        "date": "2021-06-10 18:54:14 -0700",
+        "kernel_version": "4.19",
+        "manifest_branch": "factory-kukui-12587.B",
+        "verstring": "4.19.78-15445-ga7cec41239350"
+    },
+    "kalista": {
+        "arch": "x86_64",
+        "branch": "factory-nami-10715.B-chromeos-4.4",
+        "commit": "ae7aa988f6b8db60b377d9f88fca14696c235d07",
+        "date": "2019-05-17 05:23:45 -0700",
+        "kernel_version": "4.4",
+        "manifest_branch": "factory-nami-10715.B",
+        "verstring": "4.4.132-14140-gae7aa988f6b8"
+    },
+    "kefka": {
+        "arch": "x86_64",
+        "branch": "factory-strago-7458.B-chromeos-3.18",
+        "commit": "682a4de02afb63306bd387e8d175bb1dad54e2dd",
+        "date": "2019-06-10 16:34:50 -0700",
+        "kernel_version": "3.18",
+        "manifest_branch": "factory-strago-7458.B",
+        "verstring": "3.18.0-07189-g682a4de"
+    },
+    "kukui": {
+        "arch": "arm64",
+        "branch": "factory-kukui-12587.B-chromeos-4.19",
+        "commit": "b0e57f9c96f23e06238aa9f144f59de3b9d35579",
+        "date": "2020-03-09 23:55:38 -0700",
+        "kernel_version": "4.19",
+        "manifest_branch": "factory-kukui-12587.B",
+        "verstring": "4.19.78-07489-gb0e57f9c96f2"
+    },
+    "nami": {
+        "arch": "x86_64",
+        "branch": "factory-nami-10715.B-chromeos-4.4",
+        "commit": "ae7aa988f6b8db60b377d9f88fca14696c235d07",
+        "date": "2019-06-10 18:53:12 -0700",
+        "kernel_version": "4.4",
+        "manifest_branch": "factory-nami-10715.B",
+        "verstring": "4.4.132-14140-gae7aa988f6b8"
+    },
+    "nissa": {
+        "arch": "x86_64",
+        "branch": "factory-nissa-15199.B-chromeos-5.15",
+        "commit": "631ce1c040ccda67af85188e4c06ecea539b5774",
+        "date": "2022-12-20 21:24:13 -0800",
+        "kernel_version": "5.15",
+        "manifest_branch": "factory-nissa-15199.B",
+        "verstring": "5.15.74-14076-g631ce1c040cc"
+    },
+    "octopus": {
+        "arch": "x86_64",
+        "branch": "factory-octopus-11512.B-chromeos-4.14",
+        "commit": "2ab161c540baf60bfd8a175b1fae64f3cea4b2e8",
+        "date": "2021-05-14 03:38:12 -0700",
+        "kernel_version": "4.14",
+        "manifest_branch": "factory-octopus-11512.B",
+        "verstring": "4.14.91-18023-g2ab161c540baf"
+    },
+    "puff": {
+        "arch": "x86_64",
+        "branch": "factory-puff-13329.B-chromeos-4.19",
+        "commit": "5b612c0e70adf235bbe7cd7cc10750b53f154be3",
+        "date": "2020-09-22 00:01:52 -0700",
+        "kernel_version": "4.19",
+        "manifest_branch": "factory-puff-13329.B",
+        "verstring": "4.19.131-09615-g5b612c0e70ad"
+    },
+    "pyro": {
+        "arch": "x86_64",
+        "branch": "factory-reef-8811.B-chromeos-4.4",
+        "commit": "8223b14dd33d756af1bff9ef9ebc742bb40b04e4",
+        "date": "2017-09-06 22:10:44 -0700",
+        "kernel_version": "4.4",
+        "manifest_branch": "factory-reef-8811.B",
+        "verstring": "4.4.35-06807-g8223b14"
+    },
+    "reef": {
+        "arch": "x86_64",
+        "branch": "factory-reef-8811.B-chromeos-4.4",
+        "commit": "a3626e3c22dbbfa76aa688e146e49d55a8d514d3",
+        "date": "2018-10-17 04:56:57 -0700",
+        "kernel_version": "4.4",
+        "manifest_branch": "factory-reef-8811.B",
+        "verstring": "4.4.35-06808-ga3626e3"
+    },
+    "reks": {
+        "arch": "x86_64",
+        "branch": "factory-strago-7458.B-chromeos-3.18",
+        "commit": "62186eb0e85cf2e14ffe7fbef5e0513faf40ef86",
+        "date": "2017-07-13 20:57:35 -0700",
+        "kernel_version": "3.18",
+        "manifest_branch": "factory-strago-7458.B",
+        "verstring": "3.18.0-07184-g62186eb"
+    },
+    "relm": {
+        "arch": "x86_64",
+        "branch": "factory-strago-7458.B-chromeos-3.18",
+        "commit": "682a4de02afb63306bd387e8d175bb1dad54e2dd",
+        "date": "2018-11-20 09:23:18 -0800",
+        "kernel_version": "3.18",
+        "manifest_branch": "factory-strago-7458.B",
+        "verstring": "3.18.0-07189-g682a4de"
+    },
+    "sand": {
+        "arch": "x86_64",
+        "branch": "factory-reef-8811.B-chromeos-4.4",
+        "commit": "a3626e3c22dbbfa76aa688e146e49d55a8d514d3",
+        "date": "2018-11-05 10:35:03 -0800",
+        "kernel_version": "4.4",
+        "manifest_branch": "factory-reef-8811.B",
+        "verstring": "4.4.35-06808-ga3626e3"
+    },
+    "sentry": {
+        "arch": "x86_64",
+        "branch": "chromeos-3.18",
+        "commit": "39dcd994dc52f1e5128947c71fc653ab7707c207",
+        "date": "2016-07-15 08:10:41 -0700",
+        "kernel_version": "3.18",
+        "manifest_branch": "",
+        "verstring": "3.18.0-12437-g39dcd99"
+    },
+    "snappy": {
+        "arch": "x86_64",
+        "branch": "factory-reef-8811.B-chromeos-4.4",
+        "commit": "a3626e3c22dbbfa76aa688e146e49d55a8d514d3",
+        "date": "2021-01-31 16:57:15 -0800",
+        "kernel_version": "4.4",
+        "manifest_branch": "factory-reef-8811.B",
+        "verstring": "4.4.35-06808-ga3626e3"
+    },
+    "strongbad": {
+        "arch": "arm64",
+        "branch": "factory-strongbad-13963.B-chromeos-5.4",
+        "commit": "f463ad96a3ad0963afd75b9d6a4acf23181c85be",
+        "date": "2022-04-03 22:14:12 -0700",
+        "kernel_version": "5.4",
+        "manifest_branch": "factory-strongbad-13963.B",
+        "verstring": "5.4.170-17496-gf463ad96a3ad"
+    },
+    "trogdor": {
+        "arch": "arm64",
+        "branch": "release-R88-13597.B-chromeos-5.4",
+        "commit": "574025e398d9c1d8ed43d37fb86de381f21c7fe6",
+        "date": "2021-01-12 01:45:06 -0800",
+        "kernel_version": "5.4",
+        "manifest_branch": "release-R88-13597.B",
+        "verstring": "5.4.75-10790-g574025e398d9"
+    },
+    "ultima": {
+        "arch": "x86_64",
+        "branch": "factory-strago-7458.B-chromeos-3.18",
+        "commit": "34c86635c4c0ffaa453b7e44ba75497dd46ccd89",
+        "date": "2016-03-23 09:07:02 -0700",
+        "kernel_version": "3.18",
+        "manifest_branch": "factory-strago-7458.B",
+        "verstring": "3.18.0-07146-g34c8663"
+    },
+    "volteer": {
+        "arch": "x86_64",
+        "branch": "factory-volteer-13600.B-chromeos-5.4",
+        "commit": "f3b6b1a926420ed869e23e8cea6c05c266d62987",
+        "date": "2021-06-30 12:24:27 -0700",
+        "kernel_version": "5.4",
+        "manifest_branch": "factory-volteer-13600.B",
+        "verstring": "5.4.76-20406-gf3b6b1a92642"
+    },
+    "zork": {
+        "arch": "x86_64",
+        "branch": "factory-zork-13700.B-chromeos-5.4",
+        "commit": "ee65150f6154c101ed7a1409ffbbca87e85afda4",
+        "date": "2022-07-20 08:23:18 -0700",
+        "kernel_version": "5.4",
+        "manifest_branch": "factory-zork-13700.B",
+        "verstring": "5.4.85-22101-gee65150f6154"
+    }
+}
