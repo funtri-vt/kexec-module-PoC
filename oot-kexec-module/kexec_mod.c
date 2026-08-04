@@ -927,33 +927,60 @@ static long kexec_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
                     /* Sabotage the shutdown pointer so the kernel skips it */
                     stoney_gpu_dev->dev.driver->shutdown = NULL;
                 }
-                /* --- PRE-MAP MMIO REGISTERS --- */
+
                 /* Force the kernel to wake the GPU and assign PCI resources */
                 if (pci_enable_device(stoney_gpu_dev)) {
                     printk(KERN_EMERG "kexec: WARNING - Failed to enable GPU PCI device!\n");
                 } else {
                     printk(KERN_EMERG "kexec: Successfully enabled GPU PCI device.\n");
                 }
-                /* AMD GPUs typically use BAR 5 for MMIO. Fall back to BAR 2 if needed. */
-                int mmio_bar = 5;
-                if (!(pci_resource_flags(stoney_gpu_dev, mmio_bar) & IORESOURCE_MEM)) {
-                    mmio_bar = 2; /* Fallback for some APU configurations */
+
+                phys_addr_t mmio_start = 0;
+                resource_size_t mmio_len = 0;
+
+                /* 1. Try standard kernel resource tree (BAR 5 then BAR 2) */
+                if (pci_resource_flags(stoney_gpu_dev, 5) & IORESOURCE_MEM) {
+                    mmio_start = pci_resource_start(stoney_gpu_dev, 5);
+                    mmio_len = pci_resource_len(stoney_gpu_dev, 5);
+                } else if (pci_resource_flags(stoney_gpu_dev, 2) & IORESOURCE_MEM) {
+                    mmio_start = pci_resource_start(stoney_gpu_dev, 2);
+                    mmio_len = pci_resource_len(stoney_gpu_dev, 2);
+                } 
+                /* 2. BARE-METAL FALLBACK: Kernel tree is empty. Read the raw PCI config registers! */
+                else {
+                    u32 bar_val;
+                    printk(KERN_EMERG "kexec: Kernel PCI tree empty! Bypassing kernel and reading RAW hardware BARs...\n");
+                    
+                    /* Try RAW BAR 5 (Offset 0x24) */
+                    pci_read_config_dword(stoney_gpu_dev, PCI_BASE_ADDRESS_5, &bar_val);
+                    if (bar_val && !(bar_val & PCI_BASE_ADDRESS_SPACE_IO)) {
+                        mmio_start = bar_val & PCI_BASE_ADDRESS_MEM_MASK;
+                    } else {
+                        /* Try RAW BAR 2 (Offset 0x18) */
+                        pci_read_config_dword(stoney_gpu_dev, PCI_BASE_ADDRESS_2, &bar_val);
+                        if (bar_val && !(bar_val & PCI_BASE_ADDRESS_SPACE_IO)) {
+                            mmio_start = bar_val & PCI_BASE_ADDRESS_MEM_MASK;
+                            /* Check if BAR 2 is 64-bit and stitch the high bits if needed */
+                            if ((bar_val & PCI_BASE_ADDRESS_MEM_TYPE_MASK) == PCI_BASE_ADDRESS_MEM_TYPE_64) {
+                                u32 bar_val_hi;
+                                pci_read_config_dword(stoney_gpu_dev, PCI_BASE_ADDRESS_2 + 4, &bar_val_hi);
+                                mmio_start |= ((phys_addr_t)bar_val_hi << 32);
+                            }
+                        }
+                    }
+                    /* Standard AMD MMIO window size is 256KB */
+                    mmio_len = 0x40000;
                 }
 
-                if (pci_resource_flags(stoney_gpu_dev, mmio_bar) & IORESOURCE_MEM) {
-                    phys_addr_t mmio_start = pci_resource_start(stoney_gpu_dev, mmio_bar);
-                    resource_size_t mmio_len = pci_resource_len(stoney_gpu_dev, mmio_bar);
-
-                    printk(KERN_EMERG "kexec: Pre-mapping GPU BAR%d (MMIO) at physical 0x%llx...\n",
-                           mmio_bar, (unsigned long long)mmio_start);
-
+                if (mmio_start) {
+                    printk(KERN_EMERG "kexec: Pre-mapping GPU MMIO at physical 0x%llx...\n", (unsigned long long)mmio_start);
                     stoney_mmio_base = ioremap(mmio_start, mmio_len);
-
+                    
                     if (!stoney_mmio_base) {
                         printk(KERN_EMERG "kexec: WARNING - ioremap failed for GPU MMIO!\n");
                     }
                 } else {
-                    printk(KERN_EMERG "kexec: FATAL - Could not find a valid MMIO BAR for the GPU!\n");
+                    printk(KERN_EMERG "kexec: FATAL - Could not find MMIO base address in hardware or kernel!\n");
                 }
             }
 #endif
