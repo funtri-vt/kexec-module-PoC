@@ -927,13 +927,27 @@ static long kexec_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
                     /* Sabotage the shutdown pointer so the kernel skips it */
                     stoney_gpu_dev->dev.driver->shutdown = NULL;
                 }
-                /* PRE-MAP BAR0 safely while IRQs and scheduling are fully active */
-                if (pci_resource_flags(stoney_gpu_dev, 0) & IORESOURCE_MEM) {
-                    phys_addr_t bar0_start = pci_resource_start(stoney_gpu_dev, 0);
-                    resource_size_t bar0_len = pci_resource_len(stoney_gpu_dev, 0);
+                /* --- PRE-MAP MMIO REGISTERS --- */
+                /* AMD GPUs typically use BAR 5 for MMIO. Fall back to BAR 2 if needed. */
+                int mmio_bar = 5;
+                if (!(pci_resource_flags(stoney_gpu_dev, mmio_bar) & IORESOURCE_MEM)) {
+                    mmio_bar = 2; /* Fallback for some APU configurations */
+                }
 
-                    printk(KERN_EMERG "kexec: Pre-mapping GPU BAR0 at physical 0x%llx...\n", (unsigned long long)bar0_start);
-                    stoney_mmio_base = ioremap(bar0_start, bar0_len);
+                if (pci_resource_flags(stoney_gpu_dev, mmio_bar) & IORESOURCE_MEM) {
+                    phys_addr_t mmio_start = pci_resource_start(stoney_gpu_dev, mmio_bar);
+                    resource_size_t mmio_len = pci_resource_len(stoney_gpu_dev, mmio_bar);
+
+                    printk(KERN_EMERG "kexec: Pre-mapping GPU BAR%d (MMIO) at physical 0x%llx...\n",
+                           mmio_bar, (unsigned long long)mmio_start);
+
+                    stoney_mmio_base = ioremap(mmio_start, mmio_len);
+
+                    if (!stoney_mmio_base) {
+                        printk(KERN_EMERG "kexec: WARNING - ioremap failed for GPU MMIO!\n");
+                    }
+                } else {
+                    printk(KERN_EMERG "kexec: FATAL - Could not find a valid MMIO BAR for the GPU!\n");
                 }
             }
 #endif
