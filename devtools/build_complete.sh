@@ -305,6 +305,8 @@ fi
 echo ">>> [Phase 8] Compiling Out-Of-Tree Kexec Module & Usermode Loader..."
 cd "$WORKSPACE/oot-kexec-module"
 make clean || true
+# Generate dynamic build header based on target board
+BOARD_HEADER="board_config.h"
 # Pass our explicitly prepared ChromeOS headers path to the Makefile
 # If building for any Stoney Ridge board, pass USE_BOARD_GRUNT=1
 case "${BOARD_ID,,}" in
