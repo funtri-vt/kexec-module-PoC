@@ -14,6 +14,26 @@
 //     You should have received a copy of the GNU General Public License
 //     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+//driver includes
+#ifdef BOARD_NAME_GRUNT
+/* Grunt-specific (Stoney Ridge / GFX8) GPU Driver Headers */
+#include "drivers/gpu/drm/amd/include/asic_reg/gca/gfx_8_0_d.h"
+#include "drivers/gpu/drm/amd/include/asic_reg/gca/gfx_8_0_sh_mask.h"
+/* Aliases for GFX8 GRBM Soft Reset Macros to prevent namespace collisions */
+#define GFX8_mmGRBM_SOFT_RESET                      mmGRBM_SOFT_RESET
+#define GFX8_mmGRBM_STATUS                          mmGRBM_STATUS
+#define GFX8_GRBM_SOFT_RESET__SOFT_RESET_CP_MASK    GRBM_SOFT_RESET__SOFT_RESET_CP_MASK
+#define GFX8_GRBM_SOFT_RESET__SOFT_RESET_GFX_MASK   GRBM_SOFT_RESET__SOFT_RESET_GFX_MASK
+#define GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPF_MASK   GRBM_SOFT_RESET__SOFT_RESET_CPF_MASK
+#define GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPC_MASK   GRBM_SOFT_RESET__SOFT_RESET_CPC_MASK
+#define GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPG_MASK   GRBM_SOFT_RESET__SOFT_RESET_CPG_MASK
+#define GFX8_GRBM_STATUS__CP_BUSY_MASK              GRBM_STATUS__CP_BUSY_MASK
+#define GFX8_GRBM_STATUS__GFX_BUSY_MASK             GRBM_STATUS__GFX_BUSY_MASK
+
+/* Global pointer for the intercepted Grunt GPU */
+static struct pci_dev *stoney_gpu_dev = NULL;
+#endif
+//linux includes
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
@@ -28,6 +48,8 @@
 #include <linux/screen_info.h>
 #include <linux/delay.h>
 #include <linux/pci.h>
+
+//asm includes
 #include <asm/io.h>
 #include <asm/pgtable.h>
 #include <asm/set_memory.h>
@@ -665,6 +687,12 @@ static void execute_trampoline(void)
 
     /* --- PHASE 2: SYSTEM TEARDOWN --- */
     printk(KERN_EMERG "kexec: Quiescing core systems...\n");
+    if (ptr_smp_send_stop) {
+        ptr_smp_send_stop();
+    } else if (ptr_native_stop_other_cpus) {
+        ptr_native_stop_other_cpus(0);
+    }
+    mdelay(100);
     if (ptr_lapic_shutdown) {
         printk(KERN_EMERG "kexec: Masking Local APIC Timer...\n");
         ptr_lapic_shutdown();
@@ -672,7 +700,94 @@ static void execute_trampoline(void)
     
     printk(KERN_EMERG "kexec: Point of no return. Disabling local IRQs...\n");
     local_irq_disable();
+#ifdef BOARD_NAME_GRUNT
+    // BEGIN FIXES
+    if (stoney_gpu_dev) {
+            /* --- BEGIN GRBM SOFT RESET INJECTION --- */
+            if (pci_resource_flags(stoney_gpu_dev, 0) & IORESOURCE_MEM) {
+                phys_addr_t bar0_start = pci_resource_start(stoney_gpu_dev, 0);
+                resource_size_t bar0_len = pci_resource_len(stoney_gpu_dev, 0);
+                void __iomem *mmio_base;
 
+                printk(KERN_EMERG "kexec: Mapping GPU BAR0 at physical 0x%llx for soft-reset...\n", (unsigned long long)bar0_start);
+                mmio_base = ioremap(bar0_start, bar0_len);
+
+                if (mmio_base) {
+                    /* mmGRBM_SOFT_RESET (DWORD index scaled to byte offset) */
+                    void __iomem *grbm_soft_reset = mmio_base + (GFX8_mmGRBM_SOFT_RESET * 4);
+                    /* mmGRBM_STATUS (DWORD index scaled to byte offset) */
+                    void __iomem *grbm_status = mmio_base + (GFX8_mmGRBM_STATUS * 4);
+                    u32 tmp, status_val;
+                    int timeout;
+
+                    printk(KERN_EMERG "kexec: Performing Read-Modify-Write on GRBM_SOFT_RESET...\n");
+
+                    /* 1. READ current register state to preserve other blocks */
+                    tmp = ioread32(grbm_soft_reset);
+
+                    /* 2. MODIFY by OR-ing the required CP and GFX sub-engine bits via macros */
+                    tmp |= (GFX8_GRBM_SOFT_RESET__SOFT_RESET_CP_MASK  |
+                            GFX8_GRBM_SOFT_RESET__SOFT_RESET_GFX_MASK |
+                            GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPF_MASK |
+                            GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPC_MASK |
+                            GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPG_MASK);
+
+                    /* 3. WRITE back the asserted state */
+                    iowrite32(tmp, grbm_soft_reset);
+
+                    /* Flush write posting down the PCIe fabric */
+                    ioread32(grbm_soft_reset);
+
+                    /* Wait 50 microseconds for the hardware pipelines to flush and latch */
+                    udelay(50);
+
+                    /* 4. DE-ASSERT: Read current state again, clear out the reset bits */
+                    tmp = ioread32(grbm_soft_reset);
+                    tmp &= ~(GFX8_GRBM_SOFT_RESET__SOFT_RESET_CP_MASK  |
+                             GFX8_GRBM_SOFT_RESET__SOFT_RESET_GFX_MASK |
+                             GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPF_MASK |
+                             GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPC_MASK |
+                             GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPG_MASK);
+
+                    iowrite32(tmp, grbm_soft_reset);
+
+                    /* Flush write posting */
+                    ioread32(grbm_soft_reset);
+
+                    /* 5. HANDSHAKE: Poll mmGRBM_STATUS using clean mask comparisons */
+                    timeout = 1000;
+                    while (--timeout) {
+                        status_val = ioread32(grbm_status);
+
+                        /* Check if BOTH the CP and GFX pipelines have dropped their busy flags */
+                        if (!(status_val & GFX8_GRBM_STATUS__CP_BUSY_MASK) &&
+                            !(status_val & GFX8_GRBM_STATUS__GFX_BUSY_MASK)) {
+                            printk(KERN_EMERG "kexec: GPU CP and GFX pipelines reported IDLE at loop %d.\n", 1000 - timeout);
+                            break;
+                        }
+                        udelay(5);
+                    }
+
+                    if (timeout == 0) {
+                        printk(KERN_EMERG "kexec: WARNING - GPU status handshake timed out! Status Reg: 0x%X\n", status_val);
+                    } else {
+                        printk(KERN_EMERG "kexec: GPU soft-reset completed safely via native macros.\n");
+                    }
+
+                    iounmap(mmio_base);
+                } else {
+                    printk(KERN_EMERG "kexec: WARNING - Failed to ioremap GPU BAR0!\n");
+                }
+            }
+            /* --- END GRBM SOFT RESET INJECTION --- */
+
+            pci_clear_master(stoney_gpu_dev);
+
+            /* Decrement the reference count so we don't leak memory */
+            pci_dev_put(stoney_gpu_dev);
+        }
+    //END FIXES
+#endif
     if (ptr_syscore_shutdown) {
         printk(KERN_EMERG "kexec: Tearing down syscore...\n");
         ptr_syscore_shutdown();
@@ -747,8 +862,7 @@ static void execute_trampoline(void)
     jump_target = low_page_phys + 32;
 
 
-    /* Release our temporary C PMD tracking array cleanly now that the page tables are loaded */
-    kfree(pmds);
+    // don't release, we're jumping to a new kernel anyway so it doesn't matter.'
 
     /* CRITICAL FIX: Pass low_page_phys in %rdi and zero_page_phys in %rsi. 
      * This bypasses RIP-relative calculation discrepancies entirely!
@@ -814,29 +928,19 @@ static long kexec_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
             mdelay(2000);
             if (ptr_migrate_to_reboot_cpu) ptr_migrate_to_reboot_cpu();
             
-            /* BARE-METAL UPGRADE: Shield the GPU from the shutdown loop */
-            struct pci_dev *gpu_dev = pci_get_device(0x1002, 0x98E4, NULL);
-            if (gpu_dev) {
-                if (gpu_dev->dev.driver) {
+#ifdef BOARD_NAME_GRUNT
+            /* BARE-METAL UPGRADE: Find the GPU and store it in our global pointer */
+            stoney_gpu_dev = pci_get_device(0x1002, 0x98E4, NULL);
+            if (stoney_gpu_dev) {
+                if (stoney_gpu_dev->dev.driver) {
                     printk(KERN_EMERG "kexec: Intercepted AMD GPU! Nullifying shutdown hook...\n");
                     /* Sabotage the shutdown pointer so the kernel skips it */
-                    gpu_dev->dev.driver->shutdown = NULL;
+                    stoney_gpu_dev->dev.driver->shutdown = NULL;
                 }
-                /* Decrement the reference count so we don't leak memory */
-                pci_dev_put(gpu_dev);
             }
-
+#endif
             /* BARE-METAL UPGRADE: Re-enabling ptr_device_shutdown to properly shutdown devices.*/
             if (ptr_device_shutdown) ptr_device_shutdown();
-            
-            /* Attempt multiple SMP halt fallback strategies */
-            if (ptr_smp_send_stop) {
-                ptr_smp_send_stop();
-            } else if (ptr_native_stop_other_cpus) {
-                ptr_native_stop_other_cpus(0); /* 0 usually implies no indefinite wait */
-            } else {
-                printk(KERN_EMERG "kexec: CRITICAL WARNING! No SMP stop function found! Core 1 may cause MCE.\n");
-            }
             
             printk(KERN_EMERG "kexec: Waiting for secondary cores to halt...\n");
             mdelay(100);

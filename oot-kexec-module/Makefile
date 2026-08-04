@@ -4,6 +4,10 @@ obj-m += kexec_mod.o
 # from stripping our global init/exit entry points during Kbuild Stage-1.
 ccflags-y += -fno-lto
 
+ifdef USE_BOARD_GRUNT
+    ccflags-y += -DBOARD_NAME_GRUNT
+endif
+
 # Point this to the absolute path of the chromeos kernel tree you compiled earlier
 KDIR := ../host_kernel/
 
