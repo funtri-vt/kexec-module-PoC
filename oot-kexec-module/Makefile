@@ -4,8 +4,8 @@ obj-m += kexec_mod.o
 # from stripping our global init/exit entry points during Kbuild Stage-1.
 ccflags-y += -fno-lto
 
-ifdef USE_BOARD_GRUNT
-    $(info *** kexec_mod: Building with Grunt GPU Intercept enabled ***)
+ifneq ($(or $(USE_BOARD_GRUNT),$(USE_BOARD_grunt)),)
+    $(info *** kexec_mod: Enabled GPU soft-reset for BOARD_NAME_GRUNT ***)
     ccflags-y += -DBOARD_NAME_GRUNT
 endif
 
