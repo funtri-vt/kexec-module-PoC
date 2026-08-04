@@ -923,9 +923,9 @@ static long kexec_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
             stoney_gpu_dev = pci_get_device(0x1002, 0x98E4, NULL);
             if (stoney_gpu_dev) {
                 if (stoney_gpu_dev->dev.driver) {
-                    printk(KERN_EMERG "kexec: Intercepted AMD GPU! Nullifying shutdown hook...\n");
-                    /* Sabotage the shutdown pointer so the kernel skips it */
-                    stoney_gpu_dev->dev.driver->shutdown = NULL;
+                    printk(KERN_EMERG "kexec: Intercepted AMD GPU! NOT nullifying shutdown hook...\n");
+                    /* don't aabotage the shutdown pointer so the kernel doesn't skip it */
+                    //stoney_gpu_dev->dev.driver->shutdown = NULL;
                 }
 
                 /* Force the kernel to wake the GPU and assign PCI resources */
