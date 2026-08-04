@@ -22,6 +22,7 @@
 /* Grunt-specific (Stoney Ridge / GFX8) GPU Driver Headers */
 #include "drivers/gpu/drm/amd/include/asic_reg/gca/gfx_8_0_d.h"
 #include "drivers/gpu/drm/amd/include/asic_reg/gca/gfx_8_0_sh_mask.h"
+
 /* Aliases for GFX8 GRBM Soft Reset Macros to prevent namespace collisions */
 #define GFX8_mmGRBM_SOFT_RESET                      mmGRBM_SOFT_RESET
 #define GFX8_mmGRBM_STATUS                          mmGRBM_STATUS
@@ -31,7 +32,8 @@
 #define GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPC_MASK   GRBM_SOFT_RESET__SOFT_RESET_CPC_MASK
 #define GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPG_MASK   GRBM_SOFT_RESET__SOFT_RESET_CPG_MASK
 #define GFX8_GRBM_STATUS__CP_BUSY_MASK              GRBM_STATUS__CP_BUSY_MASK
-#define GFX8_GRBM_STATUS__GFX_BUSY_MASK             GRBM_STATUS__GFX_BUSY_MASK
+// gui active isn't given to us by those includes, so we need to define it manually.
+#define GFX8_GRBM_STATUS__GUI_ACTIVE_MASK             0x80000000
 
 /* Global pointer for the intercepted Grunt GPU */
 static struct pci_dev *stoney_gpu_dev = NULL;
@@ -764,7 +766,7 @@ static void execute_trampoline(void)
 
                         /* Check if BOTH the CP and GFX pipelines have dropped their busy flags */
                         if (!(status_val & GFX8_GRBM_STATUS__CP_BUSY_MASK) &&
-                            !(status_val & GFX8_GRBM_STATUS__GFX_BUSY_MASK)) {
+                            !(status_val & GFX8_GRBM_STATUS__GUI_ACTIVE_MASK)) {
                             printk(KERN_EMERG "kexec: GPU CP and GFX pipelines reported IDLE at loop %d.\n", 1000 - timeout);
                             break;
                         }
