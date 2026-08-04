@@ -928,6 +928,12 @@ static long kexec_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
                     stoney_gpu_dev->dev.driver->shutdown = NULL;
                 }
                 /* --- PRE-MAP MMIO REGISTERS --- */
+                /* Force the kernel to wake the GPU and assign PCI resources */
+                if (pci_enable_device(stoney_gpu_dev)) {
+                    printk(KERN_EMERG "kexec: WARNING - Failed to enable GPU PCI device!\n");
+                } else {
+                    printk(KERN_EMERG "kexec: Successfully enabled GPU PCI device.\n");
+                }
                 /* AMD GPUs typically use BAR 5 for MMIO. Fall back to BAR 2 if needed. */
                 int mmio_bar = 5;
                 if (!(pci_resource_flags(stoney_gpu_dev, mmio_bar) & IORESOURCE_MEM)) {
