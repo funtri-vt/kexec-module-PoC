@@ -307,6 +307,7 @@ cd "$WORKSPACE/oot-kexec-module"
 make clean || true
 # Pass our explicitly prepared ChromeOS headers path to the Makefile
 make KDIR="$HOST_KDIR" USE_BOARD_${BOARD_ID^^}=1
+strings kexec_mod.ko | grep -i "GRBM"
 
 echo "=========================================================="
 echo " [*] DYNAMIC VERIFICATION: FRESH COMPILATION HASH"
