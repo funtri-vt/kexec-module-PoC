@@ -5,6 +5,7 @@ obj-m += kexec_mod.o
 ccflags-y += -fno-lto
 
 ifdef USE_BOARD_GRUNT
+    $(info *** kexec_mod: Building with Grunt GPU Intercept enabled ***)
     ccflags-y += -DBOARD_NAME_GRUNT
 endif
 
