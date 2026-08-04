@@ -17,27 +17,6 @@
 /* Auto-generated board configuration header */
 #include "board_config.h"
 
-//driver includes
-#ifdef BOARD_NAME_GRUNT
-/* Grunt-specific (Stoney Ridge / GFX8) GPU Driver Headers */
-#include "drivers/gpu/drm/amd/include/asic_reg/gca/gfx_8_0_d.h"
-#include "drivers/gpu/drm/amd/include/asic_reg/gca/gfx_8_0_sh_mask.h"
-
-/* Aliases for GFX8 GRBM Soft Reset Macros to prevent namespace collisions */
-#define GFX8_mmGRBM_SOFT_RESET                      mmGRBM_SOFT_RESET
-#define GFX8_mmGRBM_STATUS                          mmGRBM_STATUS
-#define GFX8_GRBM_SOFT_RESET__SOFT_RESET_CP_MASK    GRBM_SOFT_RESET__SOFT_RESET_CP_MASK
-#define GFX8_GRBM_SOFT_RESET__SOFT_RESET_GFX_MASK   GRBM_SOFT_RESET__SOFT_RESET_GFX_MASK
-#define GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPF_MASK   GRBM_SOFT_RESET__SOFT_RESET_CPF_MASK
-#define GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPC_MASK   GRBM_SOFT_RESET__SOFT_RESET_CPC_MASK
-#define GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPG_MASK   GRBM_SOFT_RESET__SOFT_RESET_CPG_MASK
-#define GFX8_GRBM_STATUS__CP_BUSY_MASK              GRBM_STATUS__CP_BUSY_MASK
-// gui active isn't given to us by those includes, so we need to define it manually.
-#define GFX8_GRBM_STATUS__GUI_ACTIVE_MASK             0x80000000
-
-/* Global pointer for the intercepted Grunt GPU */
-static struct pci_dev *stoney_gpu_dev = NULL;
-#endif
 //linux includes
 #include <linux/module.h>
 #include <linux/kernel.h>
@@ -61,6 +40,29 @@ static struct pci_dev *stoney_gpu_dev = NULL;
 
 /* Use the relative path as specified by the synchronized directory layout */
 #include "../kexec_ioctl.h"
+
+//driver includes
+#ifdef BOARD_NAME_GRUNT
+/* Grunt-specific (Stoney Ridge / GFX8) GPU Driver Headers */
+#include "drivers/gpu/drm/amd/include/asic_reg/gca/gfx_8_0_d.h"
+#include "drivers/gpu/drm/amd/include/asic_reg/gca/gfx_8_0_sh_mask.h"
+
+/* Aliases for GFX8 GRBM Soft Reset Macros to prevent namespace collisions */
+#define GFX8_mmGRBM_SOFT_RESET                      mmGRBM_SOFT_RESET
+#define GFX8_mmGRBM_STATUS                          mmGRBM_STATUS
+#define GFX8_GRBM_SOFT_RESET__SOFT_RESET_CP_MASK    GRBM_SOFT_RESET__SOFT_RESET_CP_MASK
+#define GFX8_GRBM_SOFT_RESET__SOFT_RESET_GFX_MASK   GRBM_SOFT_RESET__SOFT_RESET_GFX_MASK
+#define GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPF_MASK   GRBM_SOFT_RESET__SOFT_RESET_CPF_MASK
+#define GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPC_MASK   GRBM_SOFT_RESET__SOFT_RESET_CPC_MASK
+#define GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPG_MASK   GRBM_SOFT_RESET__SOFT_RESET_CPG_MASK
+#define GFX8_GRBM_STATUS__CP_BUSY_MASK              GRBM_STATUS__CP_BUSY_MASK
+// gui active isn't given to us by those includes, so we need to define it manually.
+#define GFX8_GRBM_STATUS__GUI_ACTIVE_MASK             0x80000000
+
+/* Global pointer for the intercepted Grunt GPU */
+static struct pci_dev *stoney_gpu_dev = NULL;
+#endif
+
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("funtri-vt");
