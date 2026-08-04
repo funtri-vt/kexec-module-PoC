@@ -242,14 +242,15 @@ make clean || true
 # If building for any Stoney Ridge board, pass USE_BOARD_GRUNT=1
 case "${BOARD_ID,,}" in
     grunt)
-        EXTRA_FLAGS="USE_BOARD_GRUNT=1"
+        echo "/* Auto-generated for Stoney Ridge family */" > "$BOARD_HEADER"
+        echo "#define BOARD_NAME_GRUNT 1" >> "$BOARD_HEADER"
         ;;
     *)
-        EXTRA_FLAGS=""
+        echo "/* Auto-generated generic board configuration */" > "$BOARD_HEADER"
         ;;
 esac
 
-make KDIR="$HOST_KDIR" $EXTRA_FLAGS
+make KDIR="$HOST_KDIR"
 
 # Safely check the artifact without failing the set -e script
 if strings kexec_mod.ko | grep -q -i "GRBM"; then

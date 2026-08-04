@@ -14,6 +14,9 @@
 //     You should have received a copy of the GNU General Public License
 //     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+/* Auto-generated board configuration header */
+#include "board_config.h"
+
 //driver includes
 #ifdef BOARD_NAME_GRUNT
 /* Grunt-specific (Stoney Ridge / GFX8) GPU Driver Headers */
