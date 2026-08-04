@@ -17,10 +17,6 @@
 /* Auto-generated board configuration header */
 #include "board_config.h"
 
-#ifdef BOARD_NAME_GRUNT
-#error "SUCCESS: The macro is being picked up by the compiler!"
-#endif
-
 //driver includes
 #ifdef BOARD_NAME_GRUNT
 /* Grunt-specific (Stoney Ridge / GFX8) GPU Driver Headers */
