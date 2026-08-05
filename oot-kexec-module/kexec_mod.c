@@ -1115,7 +1115,7 @@ int run_hijacked_initialization(void)
     }
     
 #ifdef BOARD_NAME_GRUNT
-    printk(KERN_EMERG "kexec: Compiled for BOARD_NAME_GRUNT. GPU intercept logic is ACTIVE.\n");
+    printk(KERN_EMERG "kexec: Compiled for BOARD_NAME_GRUNT.\n");
 #endif
 
     printk(KERN_EMERG "kexec: Module loaded successfully. Device node created.\n");
