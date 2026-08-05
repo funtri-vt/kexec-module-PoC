@@ -1,4 +1,19 @@
 #!/bin/sh
+BOARD_NAME=$(cat /etc/cros_boardname)
+
 finit_loader lib/kexec_mod.ko
-sleep 1
-custom_kexec -c "console=ttyS0,115200 board_id=$(cat /etc/cros_boardname) no_console_suspend"
+
+if [ "$BOARD_NAME" = "grunt" ]; then
+    echo "Detected grunt board. Unbinding amdgpu driver in:"
+    echo "3"
+    sleep 1
+    echo "2"
+    sleep 1
+    echo "1"
+    sleep 1
+    echo -n "0000:00:01:0" > /sys/bus/pci/drivers/amdgpu/unbind 2>/dev/null
+    sleep 2
+else
+    sleep 1
+fi
+custom_kexec -c "console=ttyS0,115200 board_id=$BOARD_NAME no_console_suspend"
