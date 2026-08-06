@@ -705,13 +705,13 @@ static void execute_trampoline(void)
         ptr_syscore_shutdown();
     }
     printk(KERN_EMERG "kexec: Point of no return. Disabling local IRQs...\n");
-    local_irq_disable();
     if (ptr_smp_send_stop) {
         ptr_smp_send_stop();
     } else if (ptr_native_stop_other_cpus) {
         ptr_native_stop_other_cpus(0);
     }
     mdelay(100);
+    local_irq_disable();
     if (ptr_lapic_shutdown) {
         printk(KERN_EMERG "kexec: Masking Local APIC Timer...\n");
         ptr_lapic_shutdown();
