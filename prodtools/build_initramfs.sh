@@ -177,7 +177,7 @@ EXTRA_BOOT_ARGS=""
 
 if [ "$BOARD_ID" = "grunt" ]; then # this might be useful later, but make sure to set them up individually?: || [ "$BOARD_ID" = "zork" ] || [ "$BOARD_ID" = "treeya" ]
     # construct boot args to make apuart console work for AMD boards
-    EXTRA_BOOT_ARGS="earlycon=uart8250,mmio32,0xfedc6000,4430n8 console=uart,mmio32,0xfedc6000,4430n8 ignore_loglevel board_id=$BOARD_ID panic=10 reset_devices amdgpu.noretry=1 amdgpu.gpu_recovery=1 iommu=pt amd_iommu=off"
+    EXTRA_BOOT_ARGS="earlycon=uart8250,mmio32,0xfedc6000,4430n8 console=uart,mmio32,0xfedc6000,4430n8 ignore_loglevel board_id=$BOARD_ID panic=10 reset_devices amdgpu.noretry=1 amdgpu.gpu_recovery=1 iommu=pt amdgpu.cg_mask=0 amdgpu.pg_mask=0 amdgpu.dpm=0 amdgpu.dc=0 amdgpu.sg_display=0"
 fi
 
 
@@ -230,14 +230,14 @@ echo "[AUTOMATON] Loading kernel: $TARGET_KERNEL"
 # Note: Added 'rootwait' to allow USB enumeration and switched to 'PARTUUID=' syntax
 /sbin/kexec -l "$TARGET_KERNEL" \
     --initrd="$TARGET_INITRD" \
-    --command-line="root=LABEL=DEB_ROOT rootwait rw console=$TARGET_TTY $EXTRA_BOOT_ARGS"
+    --command-line="root=LABEL=DEB_ROOT rootwait rw console=$TARGET_TTY $EXTRA_BOOT_ARGS reset_devices"
 
 echo "[AUTOMATON] Unmounting target partition..."
 umount /mnt/debian
 
-echo "[AUTOMATON] Cleanly unbinding framebuffers before kexec jump..."
-echo "efi-framebuffer.0" > /sys/bus/platform/drivers/efi-framebuffer/unbind 2>/dev/null || true
-echo "simple-framebuffer.0" > /sys/bus/platform/drivers/simple-framebuffer/unbind 2>/dev/null || true
+# echo "[AUTOMATON] Cleanly unbinding framebuffers before kexec jump..."
+# echo "efi-framebuffer.0" > /sys/bus/platform/drivers/efi-framebuffer/unbind 2>/dev/null || true
+# echo "simple-framebuffer.0" > /sys/bus/platform/drivers/simple-framebuffer/unbind 2>/dev/null || true
 
 # Execute the native handoff (this properly shuts down the UART!)
 echo "[AUTOMATON] Executing native kexec jump NOW."
