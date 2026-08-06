@@ -23,4 +23,4 @@ if [ "$BOARD_NAME" = "grunt" ]; then
 else
     sleep 1
 fi
-custom_kexec -c "console=ttyS0,115200 board_id=$BOARD_NAME no_console_suspend"
+custom_kexec -c "console=ttyS0,115200 board_id=$BOARD_NAME no_console_suspend reset_devices iommu=pt"
