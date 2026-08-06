@@ -44,30 +44,30 @@
 /* Use the relative path as specified by the synchronized directory layout */
 #include "../kexec_ioctl.h"
 
-// //driver includes
-// #ifdef BOARD_NAME_GRUNT
-// /* Grunt-specific (Stoney Ridge / GFX8) GPU Driver Headers */
-// #include "drivers/gpu/drm/amd/include/asic_reg/gca/gfx_8_0_d.h"
-// #include "drivers/gpu/drm/amd/include/asic_reg/gca/gfx_8_0_sh_mask.h"
-//
-// /* Aliases for GFX8 GRBM Soft Reset Macros to prevent namespace collisions */
-// #define GFX8_mmGRBM_SOFT_RESET                      mmGRBM_SOFT_RESET
-// #define GFX8_mmGRBM_STATUS                          mmGRBM_STATUS
-// #define GFX8_GRBM_SOFT_RESET__SOFT_RESET_CP_MASK    GRBM_SOFT_RESET__SOFT_RESET_CP_MASK
-// #define GFX8_GRBM_SOFT_RESET__SOFT_RESET_GFX_MASK   GRBM_SOFT_RESET__SOFT_RESET_GFX_MASK
-// #define GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPF_MASK   GRBM_SOFT_RESET__SOFT_RESET_CPF_MASK
-// #define GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPC_MASK   GRBM_SOFT_RESET__SOFT_RESET_CPC_MASK
-// #define GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPG_MASK   GRBM_SOFT_RESET__SOFT_RESET_CPG_MASK
-// #define GFX8_GRBM_STATUS__CP_BUSY_MASK              GRBM_STATUS__CP_BUSY_MASK
-// // gui active isn't given to us by those includes, so we need to define it manually.
-// #define GFX8_GRBM_STATUS__GUI_ACTIVE_MASK             0x80000000
-//
-// #define AMDGPU_ASIC_RESET_DATA                  0x39d5e86b
-//
-// /* Global pointer for the intercepted Grunt GPU */
-// static struct pci_dev *stoney_gpu_dev = NULL;
-// static void __iomem *stoney_mmio_base = NULL;
-// #endif
+//driver includes
+#ifdef BOARD_NAME_GRUNT
+/* Grunt-specific (Stoney Ridge / GFX8) GPU Driver Headers */
+#include "drivers/gpu/drm/amd/include/asic_reg/gca/gfx_8_0_d.h"
+#include "drivers/gpu/drm/amd/include/asic_reg/gca/gfx_8_0_sh_mask.h"
+
+/* Aliases for GFX8 GRBM Soft Reset Macros to prevent namespace collisions */
+#define GFX8_mmGRBM_SOFT_RESET                      mmGRBM_SOFT_RESET
+#define GFX8_mmGRBM_STATUS                          mmGRBM_STATUS
+#define GFX8_GRBM_SOFT_RESET__SOFT_RESET_CP_MASK    GRBM_SOFT_RESET__SOFT_RESET_CP_MASK
+#define GFX8_GRBM_SOFT_RESET__SOFT_RESET_GFX_MASK   GRBM_SOFT_RESET__SOFT_RESET_GFX_MASK
+#define GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPF_MASK   GRBM_SOFT_RESET__SOFT_RESET_CPF_MASK
+#define GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPC_MASK   GRBM_SOFT_RESET__SOFT_RESET_CPC_MASK
+#define GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPG_MASK   GRBM_SOFT_RESET__SOFT_RESET_CPG_MASK
+#define GFX8_GRBM_STATUS__CP_BUSY_MASK              GRBM_STATUS__CP_BUSY_MASK
+// gui active isn't given to us by those includes, so we need to define it manually.
+#define GFX8_GRBM_STATUS__GUI_ACTIVE_MASK             0x80000000
+
+#define AMDGPU_ASIC_RESET_DATA                  0x39d5e86b
+
+/* Global pointer for the intercepted Grunt GPU */
+static struct pci_dev *stoney_gpu_dev = NULL;
+static void __iomem *stoney_mmio_base = NULL;
+#endif
 
 
 MODULE_LICENSE("GPL");
@@ -717,73 +717,73 @@ static void execute_trampoline(void)
         ptr_lapic_shutdown();
     }
     
-// #ifdef BOARD_NAME_GRUNT
-//     // BEGIN FIXES
-//     if (stoney_gpu_dev && stoney_mmio_base) {
-//             /* --- BEGIN GRBM SOFT RESET INJECTION --- */
-//             /* We are completely atomic here. No IRQs, no other CPUs. */
+#ifdef BOARD_NAME_GRUNT
+    // BEGIN FIXES
+    if (stoney_gpu_dev && stoney_mmio_base) {
+            /* --- BEGIN GRBM SOFT RESET INJECTION --- */
+            /* We are completely atomic here. No IRQs, no other CPUs. */
 
-//             /* mmGRBM_SOFT_RESET (DWORD index scaled to byte offset) */
-//             void __iomem *grbm_soft_reset = stoney_mmio_base + (GFX8_mmGRBM_SOFT_RESET * 4);
-//             /* mmGRBM_STATUS (DWORD index scaled to byte offset) */
-//             void __iomem *grbm_status = stoney_mmio_base + (GFX8_mmGRBM_STATUS * 4);
-//             u32 tmp, status_val;
-//             int timeout;
+            /* mmGRBM_SOFT_RESET (DWORD index scaled to byte offset) */
+            void __iomem *grbm_soft_reset = stoney_mmio_base + (GFX8_mmGRBM_SOFT_RESET * 4);
+            /* mmGRBM_STATUS (DWORD index scaled to byte offset) */
+            void __iomem *grbm_status = stoney_mmio_base + (GFX8_mmGRBM_STATUS * 4);
+            u32 tmp, status_val;
+            int timeout;
 
-//             printk(KERN_EMERG "kexec: Performing Read-Modify-Write on GRBM_SOFT_RESET...\n");
+            printk(KERN_EMERG "kexec: Performing Read-Modify-Write on GRBM_SOFT_RESET...\n");
 
-//             /* 1. READ current register state to preserve other blocks */
-//             tmp = ioread32(grbm_soft_reset);
+            /* 1. READ current register state to preserve other blocks */
+            tmp = ioread32(grbm_soft_reset);
 
-//             /* 2. MODIFY by OR-ing the required CP and GFX sub-engine bits via macros */
-//             tmp |= (GFX8_GRBM_SOFT_RESET__SOFT_RESET_CP_MASK  |
-//                     GFX8_GRBM_SOFT_RESET__SOFT_RESET_GFX_MASK |
-//                     GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPF_MASK |
-//                     GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPC_MASK |
-//                     GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPG_MASK);
+            /* 2. MODIFY by OR-ing the required CP and GFX sub-engine bits via macros */
+            tmp |= (GFX8_GRBM_SOFT_RESET__SOFT_RESET_CP_MASK  |
+                    GFX8_GRBM_SOFT_RESET__SOFT_RESET_GFX_MASK |
+                    GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPF_MASK |
+                    GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPC_MASK |
+                    GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPG_MASK);
 
-//             /* 3. WRITE back the asserted state */
-//             iowrite32(tmp, grbm_soft_reset);
-//             ioread32(grbm_soft_reset);
-//             udelay(50);
+            /* 3. WRITE back the asserted state */
+            iowrite32(tmp, grbm_soft_reset);
+            ioread32(grbm_soft_reset);
+            udelay(50);
 
-//             /* 4. DE-ASSERT: Read current state again, clear out the reset bits */
-//             tmp = ioread32(grbm_soft_reset);
-//             tmp &= ~(GFX8_GRBM_SOFT_RESET__SOFT_RESET_CP_MASK  |
-//                      GFX8_GRBM_SOFT_RESET__SOFT_RESET_GFX_MASK |
-//                      GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPF_MASK |
-//                      GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPC_MASK |
-//                      GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPG_MASK);
+            /* 4. DE-ASSERT: Read current state again, clear out the reset bits */
+            tmp = ioread32(grbm_soft_reset);
+            tmp &= ~(GFX8_GRBM_SOFT_RESET__SOFT_RESET_CP_MASK  |
+                     GFX8_GRBM_SOFT_RESET__SOFT_RESET_GFX_MASK |
+                     GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPF_MASK |
+                     GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPC_MASK |
+                     GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPG_MASK);
 
-//             iowrite32(tmp, grbm_soft_reset);
-//             ioread32(grbm_soft_reset);
+            iowrite32(tmp, grbm_soft_reset);
+            ioread32(grbm_soft_reset);
 
-//             /* 5. HANDSHAKE: Poll mmGRBM_STATUS using clean mask comparisons */
-//             timeout = 1000;
-//             while (--timeout) {
-//                 status_val = ioread32(grbm_status);
-//                 if (!(status_val & GFX8_GRBM_STATUS__CP_BUSY_MASK) &&
-//                     !(status_val & GFX8_GRBM_STATUS__GUI_ACTIVE_MASK)) {
-//                     printk(KERN_EMERG "kexec: GPU CP and GFX pipelines reported IDLE at loop %d.\n", 1000 - timeout);
-//                     break;
-//                 }
-//                 udelay(5);
-//             }
+            /* 5. HANDSHAKE: Poll mmGRBM_STATUS using clean mask comparisons */
+            timeout = 1000;
+            while (--timeout) {
+                status_val = ioread32(grbm_status);
+                if (!(status_val & GFX8_GRBM_STATUS__CP_BUSY_MASK) &&
+                    !(status_val & GFX8_GRBM_STATUS__GUI_ACTIVE_MASK)) {
+                    printk(KERN_EMERG "kexec: GPU CP and GFX pipelines reported IDLE at loop %d.\n", 1000 - timeout);
+                    break;
+                }
+                udelay(5);
+            }
 
-//             if (timeout == 0) {
-//                 printk(KERN_EMERG "kexec: WARNING - GPU status handshake timed out! Status Reg: 0x%X\n", status_val);
-//             } else {
-//                 printk(KERN_EMERG "kexec: GPU soft-reset completed safely via native macros.\n");
-//             }
+            if (timeout == 0) {
+                printk(KERN_EMERG "kexec: WARNING - GPU status handshake timed out! Status Reg: 0x%X\n", status_val);
+            } else {
+                printk(KERN_EMERG "kexec: GPU soft-reset completed safely via native macros.\n");
+            }
 
-//             /* NO iounmap() needed. We are abandoning this kernel. */
-//             /* --- END GRBM SOFT RESET INJECTION --- */
+            /* NO iounmap() needed. We are abandoning this kernel. */
+            /* --- END GRBM SOFT RESET INJECTION --- */
 
-//             pci_clear_master(stoney_gpu_dev);
-//             pci_dev_put(stoney_gpu_dev);
-//     }
-//     //END FIXES
-// #endif
+            pci_clear_master(stoney_gpu_dev);
+            pci_dev_put(stoney_gpu_dev);
+    }
+    //END FIXES
+#endif
 
     /* --- PHASE 3: SAFE COPYING (Interrupts OFF, NO malloc/sleep calls allowed) --- */
     
@@ -920,99 +920,99 @@ static long kexec_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
             mdelay(2000);
             if (ptr_migrate_to_reboot_cpu) ptr_migrate_to_reboot_cpu();
             
-// #ifdef BOARD_NAME_GRUNT
-//             /* BARE-METAL UPGRADE: Find the GPU and store it in our global pointer */
-//             stoney_gpu_dev = pci_get_device(0x1002, 0x98E4, NULL);
-//             if (stoney_gpu_dev) {
-//                 if (stoney_gpu_dev->dev.driver) {
-//                     printk(KERN_EMERG "kexec: Intercepted AMD GPU! NOT nullifying shutdown hook...\n");
-//                     /* don't aabotage the shutdown pointer so the kernel doesn't skip it */
-//                     //stoney_gpu_dev->dev.driver->shutdown = NULL;
-//                 }
-//
-//                 /* Force the kernel to wake the GPU and assign PCI resources */
-//                 if (pci_enable_device(stoney_gpu_dev)) {
-//                     printk(KERN_EMERG "kexec: WARNING - Failed to enable GPU PCI device!\n");
-//                 } else {
-//                     printk(KERN_EMERG "kexec: Successfully enabled GPU PCI device.\n");
-//                 }
-//
-//                 phys_addr_t mmio_start = 0;
-//                 resource_size_t mmio_len = 0;
-//
-//                 /* 1. Try standard kernel resource tree (BAR 5 then BAR 2) */
-//                 if (pci_resource_flags(stoney_gpu_dev, 5) & IORESOURCE_MEM) {
-//                     mmio_start = pci_resource_start(stoney_gpu_dev, 5);
-//                     mmio_len = pci_resource_len(stoney_gpu_dev, 5);
-//                 } else if (pci_resource_flags(stoney_gpu_dev, 2) & IORESOURCE_MEM) {
-//                     mmio_start = pci_resource_start(stoney_gpu_dev, 2);
-//                     mmio_len = pci_resource_len(stoney_gpu_dev, 2);
-//                 }
-//                 /* 2. BARE-METAL FALLBACK: Kernel tree is empty. Read the raw PCI config registers! */
-//                 else {
-//                     u32 bar_val;
-//                     printk(KERN_EMERG "kexec: Kernel PCI tree empty! Bypassing kernel and reading RAW hardware BARs...\n");
-//
-//                     /* Try RAW BAR 5 (Offset 0x24) */
-//                     pci_read_config_dword(stoney_gpu_dev, PCI_BASE_ADDRESS_5, &bar_val);
-//                     if (bar_val && !(bar_val & PCI_BASE_ADDRESS_SPACE_IO)) {
-//                         mmio_start = bar_val & PCI_BASE_ADDRESS_MEM_MASK;
-//                     } else {
-//                         /* Try RAW BAR 2 (Offset 0x18) */
-//                         pci_read_config_dword(stoney_gpu_dev, PCI_BASE_ADDRESS_2, &bar_val);
-//                         if (bar_val && !(bar_val & PCI_BASE_ADDRESS_SPACE_IO)) {
-//                             mmio_start = bar_val & PCI_BASE_ADDRESS_MEM_MASK;
-//                             /* Check if BAR 2 is 64-bit and stitch the high bits if needed */
-//                             if ((bar_val & PCI_BASE_ADDRESS_MEM_TYPE_MASK) == PCI_BASE_ADDRESS_MEM_TYPE_64) {
-//                                 u32 bar_val_hi;
-//                                 pci_read_config_dword(stoney_gpu_dev, PCI_BASE_ADDRESS_2 + 4, &bar_val_hi);
-//                                 mmio_start |= ((phys_addr_t)bar_val_hi << 32);
-//                             }
-//                         }
-//                     }
-//                     /* Standard AMD MMIO window size is 256KB */
-//                     mmio_len = 0x40000;
-//                 }
-//
-//                 if (mmio_start) {
-//                     printk(KERN_EMERG "kexec: Pre-mapping GPU MMIO at physical 0x%llx...\n", (unsigned long long)mmio_start);
-//                     stoney_mmio_base = ioremap(mmio_start, mmio_len);
-//
-//                     if (!stoney_mmio_base) {
-//                         printk(KERN_EMERG "kexec: WARNING - ioremap failed for GPU MMIO!\n");
-//                     }
-//                 } else {
-//                     printk(KERN_EMERG "kexec: FATAL - Could not find MMIO base address in hardware or kernel!\n");
-//                 }
-//             }
-// #endif
+#ifdef BOARD_NAME_GRUNT
+            /* BARE-METAL UPGRADE: Find the GPU and store it in our global pointer */
+            stoney_gpu_dev = pci_get_device(0x1002, 0x98E4, NULL);
+            if (stoney_gpu_dev) {
+                if (stoney_gpu_dev->dev.driver) {
+                    printk(KERN_EMERG "kexec: Intercepted AMD GPU! NOT nullifying shutdown hook...\n");
+                    /* don't aabotage the shutdown pointer so the kernel doesn't skip it */
+                    //stoney_gpu_dev->dev.driver->shutdown = NULL;
+                }
+
+                /* Force the kernel to wake the GPU and assign PCI resources */
+                if (pci_enable_device(stoney_gpu_dev)) {
+                    printk(KERN_EMERG "kexec: WARNING - Failed to enable GPU PCI device!\n");
+                } else {
+                    printk(KERN_EMERG "kexec: Successfully enabled GPU PCI device.\n");
+                }
+
+                phys_addr_t mmio_start = 0;
+                resource_size_t mmio_len = 0;
+
+                /* 1. Try standard kernel resource tree (BAR 5 then BAR 2) */
+                if (pci_resource_flags(stoney_gpu_dev, 5) & IORESOURCE_MEM) {
+                    mmio_start = pci_resource_start(stoney_gpu_dev, 5);
+                    mmio_len = pci_resource_len(stoney_gpu_dev, 5);
+                } else if (pci_resource_flags(stoney_gpu_dev, 2) & IORESOURCE_MEM) {
+                    mmio_start = pci_resource_start(stoney_gpu_dev, 2);
+                    mmio_len = pci_resource_len(stoney_gpu_dev, 2);
+                }
+                /* 2. BARE-METAL FALLBACK: Kernel tree is empty. Read the raw PCI config registers! */
+                else {
+                    u32 bar_val;
+                    printk(KERN_EMERG "kexec: Kernel PCI tree empty! Bypassing kernel and reading RAW hardware BARs...\n");
+
+                    /* Try RAW BAR 5 (Offset 0x24) */
+                    pci_read_config_dword(stoney_gpu_dev, PCI_BASE_ADDRESS_5, &bar_val);
+                    if (bar_val && !(bar_val & PCI_BASE_ADDRESS_SPACE_IO)) {
+                        mmio_start = bar_val & PCI_BASE_ADDRESS_MEM_MASK;
+                    } else {
+                        /* Try RAW BAR 2 (Offset 0x18) */
+                        pci_read_config_dword(stoney_gpu_dev, PCI_BASE_ADDRESS_2, &bar_val);
+                        if (bar_val && !(bar_val & PCI_BASE_ADDRESS_SPACE_IO)) {
+                            mmio_start = bar_val & PCI_BASE_ADDRESS_MEM_MASK;
+                            /* Check if BAR 2 is 64-bit and stitch the high bits if needed */
+                            if ((bar_val & PCI_BASE_ADDRESS_MEM_TYPE_MASK) == PCI_BASE_ADDRESS_MEM_TYPE_64) {
+                                u32 bar_val_hi;
+                                pci_read_config_dword(stoney_gpu_dev, PCI_BASE_ADDRESS_2 + 4, &bar_val_hi);
+                                mmio_start |= ((phys_addr_t)bar_val_hi << 32);
+                            }
+                        }
+                    }
+                    /* Standard AMD MMIO window size is 256KB */
+                    mmio_len = 0x40000;
+                }
+
+                if (mmio_start) {
+                    printk(KERN_EMERG "kexec: Pre-mapping GPU MMIO at physical 0x%llx...\n", (unsigned long long)mmio_start);
+                    stoney_mmio_base = ioremap(mmio_start, mmio_len);
+
+                    if (!stoney_mmio_base) {
+                        printk(KERN_EMERG "kexec: WARNING - ioremap failed for GPU MMIO!\n");
+                    }
+                } else {
+                    printk(KERN_EMERG "kexec: FATAL - Could not find MMIO base address in hardware or kernel!\n");
+                }
+            }
+#endif
             mdelay(2000);
             /* BARE-METAL UPGRADE: Re-enabling ptr_device_shutdown to properly shutdown devices.*/
             if (ptr_device_shutdown) ptr_device_shutdown();
             
-// #ifdef BOARD_NAME_GRUNT
-//             if (stoney_gpu_dev) {
-//                 u16 cmd;
-//                 /* * The native shutdown hook put the SMU to sleep safely, but it also
-//                  * called pci_disable_device() (turning off MMIO) and possibly put the GPU in D3hot.
-//                  * We must wake it up and forcefully re-enable the PCI memory space so
-//                  * our trampoline can access the GRBM!
-//                  */
-//                 pci_set_power_state(stoney_gpu_dev, PCI_D0);
-//                 pci_read_config_word(stoney_gpu_dev, PCI_COMMAND, &cmd);
-//                 if (!(cmd & PCI_COMMAND_MEMORY)) {
-//                     pci_write_config_word(stoney_gpu_dev, PCI_COMMAND, cmd | PCI_COMMAND_MEMORY | PCI_COMMAND_MASTER);
-//                     printk(KERN_EMERG "kexec: Forcefully re-enabled GPU PCI Memory Space for Trampoline.\n");
-//                 }
-//
-//                 /* --- NEW VENDOR PCI CONFIG RESET --- */
-//                 printk(KERN_EMERG "kexec: Triggering AMDGPU Vendor PCI Config Reset (0x7c)...\n");
-//                 pci_write_config_dword(stoney_gpu_dev, 0x7c, AMDGPU_ASIC_RESET_DATA); /* AMDGPU_ASIC_RESET_DATA */
-//
-//                 /* Give the SMU microcontroller time to boot its firmware before we pivot */
-//                 mdelay(150);
-//             }
-// #endif
+#ifdef BOARD_NAME_GRUNT
+            if (stoney_gpu_dev) {
+                u16 cmd;
+                /* * The native shutdown hook put the SMU to sleep safely, but it also
+                 * called pci_disable_device() (turning off MMIO) and possibly put the GPU in D3hot.
+                 * We must wake it up and forcefully re-enable the PCI memory space so
+                 * our trampoline can access the GRBM!
+                 */
+                pci_set_power_state(stoney_gpu_dev, PCI_D0);
+                pci_read_config_word(stoney_gpu_dev, PCI_COMMAND, &cmd);
+                if (!(cmd & PCI_COMMAND_MEMORY)) {
+                    pci_write_config_word(stoney_gpu_dev, PCI_COMMAND, cmd | PCI_COMMAND_MEMORY | PCI_COMMAND_MASTER);
+                    printk(KERN_EMERG "kexec: Forcefully re-enabled GPU PCI Memory Space for Trampoline.\n");
+                }
+
+                // /* --- NEW VENDOR PCI CONFIG RESET --- */
+                // printk(KERN_EMERG "kexec: Triggering AMDGPU Vendor PCI Config Reset (0x7c)...\n");
+                // pci_write_config_dword(stoney_gpu_dev, 0x7c, AMDGPU_ASIC_RESET_DATA); /* AMDGPU_ASIC_RESET_DATA */
+
+                /* Give the SMU microcontroller time to boot its firmware before we pivot */
+                mdelay(150);
+            }
+#endif
 
             printk(KERN_EMERG "kexec: Waiting for secondary cores to halt...\n");
             mdelay(100);
