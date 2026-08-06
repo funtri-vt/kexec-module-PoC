@@ -1114,7 +1114,7 @@ int run_hijacked_initialization(void)
     }
     
 #ifdef BOARD_NAME_GRUNT
-    printk(KERN_EMERG "kexec: Compiled for BOARD_NAME_GRUNT.\n");
+    printk(KERN_EMERG "kexec: Compiled for BOARD_NAME_GRUNT. amdgpu reset ACTIVE.\n");
 #endif
 
     printk(KERN_EMERG "kexec: Module loaded successfully. Device node created.\n");
