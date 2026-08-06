@@ -700,6 +700,12 @@ static void execute_trampoline(void)
 
     /* --- PHASE 2: SYSTEM TEARDOWN --- */
     printk(KERN_EMERG "kexec: Quiescing core systems...\n");
+    if (ptr_syscore_shutdown) {
+        printk(KERN_EMERG "kexec: Tearing down syscore...\n");
+        ptr_syscore_shutdown();
+    }
+    printk(KERN_EMERG "kexec: Point of no return. Disabling local IRQs...\n");
+    local_irq_disable();
     if (ptr_smp_send_stop) {
         ptr_smp_send_stop();
     } else if (ptr_native_stop_other_cpus) {
@@ -711,8 +717,6 @@ static void execute_trampoline(void)
         ptr_lapic_shutdown();
     }
     
-    printk(KERN_EMERG "kexec: Point of no return. Disabling local IRQs...\n");
-    local_irq_disable();
 // #ifdef BOARD_NAME_GRUNT
 //     // BEGIN FIXES
 //     if (stoney_gpu_dev && stoney_mmio_base) {
@@ -780,10 +784,6 @@ static void execute_trampoline(void)
 //     }
 //     //END FIXES
 // #endif
-    if (ptr_syscore_shutdown) {
-        printk(KERN_EMERG "kexec: Tearing down syscore...\n");
-        ptr_syscore_shutdown();
-    }
 
     /* --- PHASE 3: SAFE COPYING (Interrupts OFF, NO malloc/sleep calls allowed) --- */
     
