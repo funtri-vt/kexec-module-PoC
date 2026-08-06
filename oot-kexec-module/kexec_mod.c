@@ -925,9 +925,8 @@ static long kexec_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
             stoney_gpu_dev = pci_get_device(0x1002, 0x98E4, NULL);
             if (stoney_gpu_dev) {
                 if (stoney_gpu_dev->dev.driver) {
-                    printk(KERN_EMERG "kexec: Intercepted AMD GPU! NOT nullifying shutdown hook...\n");
-                    /* don't aabotage the shutdown pointer so the kernel doesn't skip it */
-                    //stoney_gpu_dev->dev.driver->shutdown = NULL;
+                    printk(KERN_EMERG "kexec: Intercepted AMD GPU! Nullifying shutdown hook...\n");
+                    stoney_gpu_dev->dev.driver->shutdown = NULL;
                 }
 
                 /* Force the kernel to wake the GPU and assign PCI resources */
@@ -992,18 +991,18 @@ static long kexec_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
             
 #ifdef BOARD_NAME_GRUNT
             if (stoney_gpu_dev) {
-                u16 cmd;
+                // u16 cmd;
                 /* * The native shutdown hook put the SMU to sleep safely, but it also
                  * called pci_disable_device() (turning off MMIO) and possibly put the GPU in D3hot.
                  * We must wake it up and forcefully re-enable the PCI memory space so
                  * our trampoline can access the GRBM!
                  */
-                pci_set_power_state(stoney_gpu_dev, PCI_D0);
-                pci_read_config_word(stoney_gpu_dev, PCI_COMMAND, &cmd);
-                if (!(cmd & PCI_COMMAND_MEMORY)) {
-                    pci_write_config_word(stoney_gpu_dev, PCI_COMMAND, cmd | PCI_COMMAND_MEMORY | PCI_COMMAND_MASTER);
-                    printk(KERN_EMERG "kexec: Forcefully re-enabled GPU PCI Memory Space for Trampoline.\n");
-                }
+                // pci_set_power_state(stoney_gpu_dev, PCI_D0);
+                // pci_read_config_word(stoney_gpu_dev, PCI_COMMAND, &cmd);
+                // if (!(cmd & PCI_COMMAND_MEMORY)) {
+                //     pci_write_config_word(stoney_gpu_dev, PCI_COMMAND, cmd | PCI_COMMAND_MEMORY | PCI_COMMAND_MASTER);
+                //     printk(KERN_EMERG "kexec: Forcefully re-enabled GPU PCI Memory Space for Trampoline.\n");
+                // }
 
                 // /* --- NEW VENDOR PCI CONFIG RESET --- */
                 // printk(KERN_EMERG "kexec: Triggering AMDGPU Vendor PCI Config Reset (0x7c)...\n");
