@@ -44,53 +44,53 @@
 /* Use the relative path as specified by the synchronized directory layout */
 #include "../kexec_ioctl.h"
 
-// //driver includes
-// #ifdef BOARD_NAME_GRUNT
-// /* Grunt-specific (Stoney Ridge / GFX8) GPU Driver Headers */
-// #include "drivers/gpu/drm/amd/include/asic_reg/gca/gfx_8_0_d.h"
-// #include "drivers/gpu/drm/amd/include/asic_reg/gca/gfx_8_0_sh_mask.h"
-// #include "drivers/gpu/drm/amd/include/asic_reg/oss/oss_3_0_sh_mask.h"
-// #include "drivers/gpu/drm/amd/include/asic_reg/oss/oss_3_0_d.h"
-// #include "drivers/gpu/drm/amd/include/asic_reg/smu/smu_7_1_3_d.h"
-// #include "drivers/gpu/drm/amd/include/asic_reg/smu/smu_7_1_3_sh_mask.h"
+//driver includes
+#ifdef BOARD_NAME_GRUNT
+/* Grunt-specific (Stoney Ridge / GFX8) GPU Driver Headers */
+#include "drivers/gpu/drm/amd/include/asic_reg/gca/gfx_8_0_d.h"
+#include "drivers/gpu/drm/amd/include/asic_reg/gca/gfx_8_0_sh_mask.h"
+#include "drivers/gpu/drm/amd/include/asic_reg/oss/oss_3_0_sh_mask.h"
+#include "drivers/gpu/drm/amd/include/asic_reg/oss/oss_3_0_d.h"
+#include "drivers/gpu/drm/amd/include/asic_reg/smu/smu_7_1_3_d.h"
+#include "drivers/gpu/drm/amd/include/asic_reg/smu/smu_7_1_3_sh_mask.h"
 
-// /* Aliases for GFX8 GRBM Soft Reset Macros to prevent namespace collisions */
-// #define GFX8_mmGRBM_SOFT_RESET                      mmGRBM_SOFT_RESET
-// #define GFX8_mmGRBM_STATUS                          mmGRBM_STATUS
-// #define GFX8_GRBM_SOFT_RESET__SOFT_RESET_CP_MASK    GRBM_SOFT_RESET__SOFT_RESET_CP_MASK
-// #define GFX8_GRBM_SOFT_RESET__SOFT_RESET_GFX_MASK   GRBM_SOFT_RESET__SOFT_RESET_GFX_MASK
-// #define GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPF_MASK   GRBM_SOFT_RESET__SOFT_RESET_CPF_MASK
-// #define GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPC_MASK   GRBM_SOFT_RESET__SOFT_RESET_CPC_MASK
-// #define GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPG_MASK   GRBM_SOFT_RESET__SOFT_RESET_CPG_MASK
-// #define GFX8_GRBM_SOFT_RESET__SOFT_RESET_RLC_MASK   GRBM_SOFT_RESET__SOFT_RESET_RLC_MASK
-// #define GFX8_GRBM_STATUS__CP_BUSY_MASK              GRBM_STATUS__CP_BUSY_MASK
+/* Aliases for GFX8 GRBM Soft Reset Macros to prevent namespace collisions */
+#define GFX8_mmGRBM_SOFT_RESET                      mmGRBM_SOFT_RESET
+#define GFX8_mmGRBM_STATUS                          mmGRBM_STATUS
+#define GFX8_GRBM_SOFT_RESET__SOFT_RESET_CP_MASK    GRBM_SOFT_RESET__SOFT_RESET_CP_MASK
+#define GFX8_GRBM_SOFT_RESET__SOFT_RESET_GFX_MASK   GRBM_SOFT_RESET__SOFT_RESET_GFX_MASK
+#define GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPF_MASK   GRBM_SOFT_RESET__SOFT_RESET_CPF_MASK
+#define GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPC_MASK   GRBM_SOFT_RESET__SOFT_RESET_CPC_MASK
+#define GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPG_MASK   GRBM_SOFT_RESET__SOFT_RESET_CPG_MASK
+#define GFX8_GRBM_SOFT_RESET__SOFT_RESET_RLC_MASK   GRBM_SOFT_RESET__SOFT_RESET_RLC_MASK
+#define GFX8_GRBM_STATUS__CP_BUSY_MASK              GRBM_STATUS__CP_BUSY_MASK
 
-// /* Alias SMU Mailbox registers from smu_7_1_3_d.h for Stoney Ridge */
-// #define GFX8_mmSMC_MESSAGE_0    mmSMC_MESSAGE_0
-// #define GFX8_mmSMC_RESP_0       mmSMC_RESP_0
-// #define GFX8_mmSMC_MSG_ARG_0    mmSMC_MSG_ARG_0
+/* Alias SMU Mailbox registers from smu_7_1_3_d.h for Stoney Ridge */
+#define GFX8_mmSMC_MESSAGE_0    mmSMC_MESSAGE_0
+#define GFX8_mmSMC_RESP_0       mmSMC_RESP_0
+#define GFX8_mmSMC_MSG_ARG_0    mmSMC_MSG_ARG_0
 
 
-// // aliases for srbm
-// #define GFX8_mmSRBM_SOFT_RESET                      mmSRBM_SOFT_RESET
-// #define GFX8_SRBM_SOFT_RESET__SOFT_RESET_SDMA_MASK  SRBM_SOFT_RESET__SOFT_RESET_SDMA_MASK
-// #define GFX8_SRBM_SOFT_RESET__SOFT_RESET_SDMA1_MASK SRBM_SOFT_RESET__SOFT_RESET_SDMA1_MASK
-// #define GFX8_SRBM_SOFT_RESET__SOFT_RESET_IH_MASK    SRBM_SOFT_RESET__SOFT_RESET_IH_MASK
-// // gui active isn't given to us by those includes, so we need to define it manually.
-// #define GFX8_GRBM_STATUS__GUI_ACTIVE_MASK             0x80000000
+// aliases for srbm
+#define GFX8_mmSRBM_SOFT_RESET                      mmSRBM_SOFT_RESET
+#define GFX8_SRBM_SOFT_RESET__SOFT_RESET_SDMA_MASK  SRBM_SOFT_RESET__SOFT_RESET_SDMA_MASK
+#define GFX8_SRBM_SOFT_RESET__SOFT_RESET_SDMA1_MASK SRBM_SOFT_RESET__SOFT_RESET_SDMA1_MASK
+#define GFX8_SRBM_SOFT_RESET__SOFT_RESET_IH_MASK    SRBM_SOFT_RESET__SOFT_RESET_IH_MASK
+// gui active isn't given to us by those includes, so we need to define it manually.
+#define GFX8_GRBM_STATUS__GUI_ACTIVE_MASK             0x80000000
 
-// #define AMDGPU_ASIC_RESET_DATA                  0x39d5e86b
+#define AMDGPU_ASIC_RESET_DATA                  0x39d5e86b
 
-// #define GFX8_mmSMC_IND_INDEX_0         mmSMC_IND_INDEX_0
-// #define GFX8_mmSMC_IND_DATA_0          mmSMC_IND_DATA_0
+#define GFX8_mmSMC_IND_INDEX_0         mmSMC_IND_INDEX_0
+#define GFX8_mmSMC_IND_DATA_0          mmSMC_IND_DATA_0
 
-// #define GFX8_ixSMC_SYSCON_RESET_CNTL   ixSMC_SYSCON_RESET_CNTL
-// #define GFX8_ixSMC_SYSCON_CLOCK_CNTL_0 ixSMC_SYSCON_CLOCK_CNTL_0
+#define GFX8_ixSMC_SYSCON_RESET_CNTL   ixSMC_SYSCON_RESET_CNTL
+#define GFX8_ixSMC_SYSCON_CLOCK_CNTL_0 ixSMC_SYSCON_CLOCK_CNTL_0
 
-// /* Global pointer for the intercepted Grunt GPU */
-// static struct pci_dev *stoney_gpu_dev = NULL;
-// static void __iomem *stoney_mmio_base = NULL;
-// #endif
+/* Global pointer for the intercepted Grunt GPU */
+static struct pci_dev *stoney_gpu_dev = NULL;
+static void __iomem *stoney_mmio_base = NULL;
+#endif
 
 
 MODULE_LICENSE("GPL");
