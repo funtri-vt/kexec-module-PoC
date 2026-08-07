@@ -779,6 +779,13 @@ static void execute_trampoline(void)
             /* NO iounmap() needed. We are abandoning this kernel. */
             /* --- END GRBM SOFT RESET INJECTION --- */
 
+            /* --- NEW VENDOR PCI CONFIG RESET --- */
+            printk(KERN_EMERG "kexec: Triggering AMDGPU Vendor PCI Config Reset (0x7c)...\n");
+            pci_write_config_dword(stoney_gpu_dev, 0x7c, AMDGPU_ASIC_RESET_DATA); /* AMDGPU_ASIC_RESET_DATA */
+
+            /* Give the SMU microcontroller time to boot its firmware before we pivot */
+            mdelay(150);
+
             pci_clear_master(stoney_gpu_dev);
             pci_dev_put(stoney_gpu_dev);
     }
@@ -1003,13 +1010,6 @@ static long kexec_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
                 //     pci_write_config_word(stoney_gpu_dev, PCI_COMMAND, cmd | PCI_COMMAND_MEMORY | PCI_COMMAND_MASTER);
                 //     printk(KERN_EMERG "kexec: Forcefully re-enabled GPU PCI Memory Space for Trampoline.\n");
                 // }
-
-                // /* --- NEW VENDOR PCI CONFIG RESET --- */
-                // printk(KERN_EMERG "kexec: Triggering AMDGPU Vendor PCI Config Reset (0x7c)...\n");
-                // pci_write_config_dword(stoney_gpu_dev, 0x7c, AMDGPU_ASIC_RESET_DATA); /* AMDGPU_ASIC_RESET_DATA */
-
-                /* Give the SMU microcontroller time to boot its firmware before we pivot */
-                mdelay(150);
             }
 #endif
 
