@@ -81,6 +81,12 @@
 
 #define AMDGPU_ASIC_RESET_DATA                  0x39d5e86b
 
+#define GFX8_mmSMC_IND_INDEX_0         mmSMC_IND_INDEX_0
+#define GFX8_mmSMC_IND_DATA_0          mmSMC_IND_DATA_0
+
+#define GFX8_ixSMC_SYSCON_RESET_CNTL   ixSMC_SYSCON_RESET_CNTL
+#define GFX8_ixSMC_SYSCON_CLOCK_CNTL_0 ixSMC_SYSCON_CLOCK_CNTL_0
+
 /* Global pointer for the intercepted Grunt GPU */
 static struct pci_dev *stoney_gpu_dev = NULL;
 static void __iomem *stoney_mmio_base = NULL;
@@ -824,6 +830,29 @@ static void execute_trampoline(void)
     
             /* 3. Flush PCI write queue */
             (void)ioread32(smc_resp);
+            udelay(100);
+
+
+            void __iomem *smc_idx = stoney_mmio_base + (GFX8_mmSMC_IND_INDEX_0 * 4);
+            void __iomem *smc_dat = stoney_mmio_base + (GFX8_mmSMC_IND_DATA_0 * 4);
+            u32 tmp;
+
+            printk(KERN_EMERG "kexec: Executing SMU Brain Wipe (Halting SMC Microcontroller)...\n");
+
+            /* 1. Assert SMC Reset (rst_reg = bit 0) */
+            iowrite32(GFX8_ixSMC_SYSCON_RESET_CNTL, smc_idx);
+            tmp = ioread32(smc_dat);
+            tmp |= 1; /* Set rst_reg */
+            iowrite32(tmp, smc_dat);
+
+            /* 2. Disable SMC Clock (ck_disable = bit 0) */
+            iowrite32(GFX8_ixSMC_SYSCON_CLOCK_CNTL_0, smc_idx);
+            tmp = ioread32(smc_dat);
+            tmp |= 1; /* Set ck_disable */
+            iowrite32(tmp, smc_dat);
+
+            /* Flush PCI write queue */
+            (void)ioread32(smc_dat);
             udelay(100);
 
             /* NO iounmap() needed. We are abandoning this kernel. */
