@@ -740,136 +740,71 @@ static void execute_trampoline(void)
         ptr_lapic_shutdown();
     }
     
-// #ifdef BOARD_NAME_GRUNT
-//     // BEGIN FIXES
-//     if (stoney_gpu_dev && stoney_mmio_base) {
-//             /* --- BEGIN GRBM SOFT RESET INJECTION --- */
-//             /* We are completely atomic here. No IRQs, no other CPUs. */
+#ifdef BOARD_NAME_GRUNT
+    // BEGIN FIXES
+    if (stoney_gpu_dev && stoney_mmio_base) {
+            /* --- BEGIN GRBM SOFT RESET INJECTION --- */
+            /* We are completely atomic here. No IRQs, no other CPUs. */
 
-//             /* mmGRBM_SOFT_RESET (DWORD index scaled to byte offset) */
-//             void __iomem *grbm_soft_reset = stoney_mmio_base + (GFX8_mmGRBM_SOFT_RESET * 4);
-//             /* mmGRBM_STATUS (DWORD index scaled to byte offset) */
-//             void __iomem *grbm_status = stoney_mmio_base + (GFX8_mmGRBM_STATUS * 4);
+            /* mmGRBM_SOFT_RESET (DWORD index scaled to byte offset) */
+            void __iomem *grbm_soft_reset = stoney_mmio_base + (GFX8_mmGRBM_SOFT_RESET * 4);
+            /* mmGRBM_STATUS (DWORD index scaled to byte offset) */
+            void __iomem *grbm_status = stoney_mmio_base + (GFX8_mmGRBM_STATUS * 4);            
 
-//             void __iomem *srbm_soft_reset = stoney_mmio_base + (GFX8_mmSRBM_SOFT_RESET * 4);
-            
+            u32 grbm_tmp, status_val;
+            int timeout;
 
-//             u32 grbm_tmp, status_val, srbm_tmp;
-//             int timeout;
+            printk(KERN_EMERG "kexec: Performing Read-Modify-Write on GRBM_SOFT_RESET...\n");
 
-//             printk(KERN_EMERG "kexec: Performing Read-Modify-Write on GRBM_SOFT_RESET...\n");
+            /* 1. READ current register state to preserve other blocks */
+            grbm_tmp = ioread32(grbm_soft_reset);
+            /* 2. MODIFY by OR-ing the required CP and GFX sub-engine bits via macros */
+            grbm_tmp |= (GFX8_GRBM_SOFT_RESET__SOFT_RESET_CP_MASK  |
+                    GFX8_GRBM_SOFT_RESET__SOFT_RESET_GFX_MASK |
+                    GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPF_MASK |
+                    GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPC_MASK |
+                    GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPG_MASK);
 
-//             /* 1. READ current register state to preserve other blocks */
-//             grbm_tmp = ioread32(grbm_soft_reset);
-//             srbm_tmp = ioread32(srbm_soft_reset);
+            /* 3. WRITE back the asserted state */
+            iowrite32(grbm_tmp, grbm_soft_reset);
+            ioread32(grbm_soft_reset);
+            udelay(50);
 
-//             /* 2. MODIFY by OR-ing the required CP and GFX sub-engine bits via macros */
-//             grbm_tmp |= (GFX8_GRBM_SOFT_RESET__SOFT_RESET_CP_MASK  |
-//                     GFX8_GRBM_SOFT_RESET__SOFT_RESET_GFX_MASK |
-//                     GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPF_MASK |
-//                     GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPC_MASK |
-//                     GFX8_GRBM_SOFT_RESET__SOFT_RESET_RLC_MASK |
-//                     GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPG_MASK);
-            
-//             srbm_tmp |= (GFX8_SRBM_SOFT_RESET__SOFT_RESET_SDMA_MASK  |
-//                  GFX8_SRBM_SOFT_RESET__SOFT_RESET_SDMA1_MASK |
-//                  GFX8_SRBM_SOFT_RESET__SOFT_RESET_IH_MASK);
+            /* 4. DE-ASSERT: Read current state again, clear out the reset bits */
+            grbm_tmp = ioread32(grbm_soft_reset);
+            grbm_tmp &= ~(GFX8_GRBM_SOFT_RESET__SOFT_RESET_CP_MASK  |
+                     GFX8_GRBM_SOFT_RESET__SOFT_RESET_GFX_MASK |
+                     GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPF_MASK |
+                     GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPC_MASK |
+                     GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPG_MASK);
 
-//             /* 3. WRITE back the asserted state */
-//             iowrite32(grbm_tmp, grbm_soft_reset);
-//             iowrite32(srbm_tmp, srbm_soft_reset);
-//             ioread32(grbm_soft_reset);
-//             ioread32(srbm_soft_reset);
-//             udelay(50);
+            iowrite32(grbm_tmp, grbm_soft_reset);
+            ioread32(grbm_soft_reset);
 
-//             /* 4. DE-ASSERT: Read current state again, clear out the reset bits */
-//             grbm_tmp = ioread32(grbm_soft_reset);
-//             grbm_tmp &= ~(GFX8_GRBM_SOFT_RESET__SOFT_RESET_CP_MASK  |
-//                      GFX8_GRBM_SOFT_RESET__SOFT_RESET_GFX_MASK |
-//                      GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPF_MASK |
-//                      GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPC_MASK |
-//                      GFX8_GRBM_SOFT_RESET__SOFT_RESET_RLC_MASK |
-//                      GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPG_MASK);
-//             srbm_tmp = ioread32(srbm_soft_reset);
-//             srbm_tmp &= ~(GFX8_SRBM_SOFT_RESET__SOFT_RESET_SDMA_MASK  |
-//                   GFX8_SRBM_SOFT_RESET__SOFT_RESET_SDMA1_MASK |
-//                   GFX8_SRBM_SOFT_RESET__SOFT_RESET_IH_MASK);
+            /* 5. HANDSHAKE: Poll mmGRBM_STATUS using clean mask comparisons */
+            timeout = 1000;
+            while (--timeout) {
+                status_val = ioread32(grbm_status);
+                if (!(status_val & GFX8_GRBM_STATUS__CP_BUSY_MASK) &&
+                    !(status_val & GFX8_GRBM_STATUS__GUI_ACTIVE_MASK)) {
+                    printk(KERN_EMERG "kexec: GPU CP and GFX pipelines reported IDLE at loop %d.\n", 1000 - timeout);
+                    break;
+                }
+                udelay(5);
+            }
 
-//             iowrite32(grbm_tmp, grbm_soft_reset);
-//             iowrite32(srbm_tmp, srbm_soft_reset);
-//             ioread32(srbm_soft_reset);
-//             ioread32(grbm_soft_reset);
-
-//             /* 5. HANDSHAKE: Poll mmGRBM_STATUS using clean mask comparisons */
-//             timeout = 1000;
-//             while (--timeout) {
-//                 status_val = ioread32(grbm_status);
-//                 if (!(status_val & GFX8_GRBM_STATUS__CP_BUSY_MASK) &&
-//                     !(status_val & GFX8_GRBM_STATUS__GUI_ACTIVE_MASK)) {
-//                     printk(KERN_EMERG "kexec: GPU CP and GFX pipelines reported IDLE at loop %d.\n", 1000 - timeout);
-//                     break;
-//                 }
-//                 udelay(5);
-//             }
-
-//             if (timeout == 0) {
-//                 printk(KERN_EMERG "kexec: WARNING - GPU status handshake timed out! Status Reg: 0x%X\n", status_val);
-//             } else {
-//                 printk(KERN_EMERG "kexec: GPU soft-reset completed safely via native macros.\n");
-//             }
-
-//             /* --- SMU MAILBOX FORCE-IDLE FLUSH --- */
-//             void __iomem *smc_msg  = stoney_mmio_base + (GFX8_mmSMC_MESSAGE_0 * 4);
-//             void __iomem *smc_resp = stoney_mmio_base + (GFX8_mmSMC_RESP_0 * 4);
-
-//             /* 1. Force response register to CMD_OK (0x1) */
-//             iowrite32(1, smc_resp);
-
-//             /* 2. Clear pending message ID */
-//             iowrite32(0, smc_msg);
-    
-//             /* 3. Flush PCI write queue */
-//             (void)ioread32(smc_resp);
-//             udelay(100);
+            if (timeout == 0) {
+                printk(KERN_EMERG "kexec: WARNING - GPU status handshake timed out! Status Reg: 0x%X\n", status_val);
+            } else {
+                printk(KERN_EMERG "kexec: GPU soft-reset completed safely via native macros.\n");
+            }
 
 
-//             // void __iomem *smc_idx = stoney_mmio_base + (GFX8_mmSMC_IND_INDEX_0 * 4);
-//             // void __iomem *smc_dat = stoney_mmio_base + (GFX8_mmSMC_IND_DATA_0 * 4);
-//             // u32 tmp;
-
-//             // printk(KERN_EMERG "kexec: Executing SMU Brain Wipe (Halting SMC Microcontroller)...\n");
-
-//             // /* 1. Assert SMC Reset (rst_reg = bit 0) */
-//             // iowrite32(GFX8_ixSMC_SYSCON_RESET_CNTL, smc_idx);
-//             // tmp = ioread32(smc_dat);
-//             // tmp |= 1; /* Set rst_reg */
-//             // iowrite32(tmp, smc_dat);
-
-//             // /* 2. Disable SMC Clock (ck_disable = bit 0) */
-//             // iowrite32(GFX8_ixSMC_SYSCON_CLOCK_CNTL_0, smc_idx);
-//             // tmp = ioread32(smc_dat);
-//             // tmp |= 1; /* Set ck_disable */
-//             // iowrite32(tmp, smc_dat);
-
-//             // /* Flush PCI write queue */
-//             // (void)ioread32(smc_dat);
-//             // udelay(100);
-
-//             /* NO iounmap() needed. We are abandoning this kernel. */
-//             /* --- END GRBM SOFT RESET INJECTION --- */
-
-//             /* --- NEW VENDOR PCI CONFIG RESET --- */
-//             // printk(KERN_EMERG "kexec: Triggering AMDGPU Vendor PCI Config Reset (0x7c)...\n");
-//             // pci_write_config_dword(stoney_gpu_dev, 0x7c, AMDGPU_ASIC_RESET_DATA); /* AMDGPU_ASIC_RESET_DATA */
-
-//             // /* Give the SMU microcontroller time to boot its firmware before we pivot */
-//             // mdelay(150);
-
-//             // pci_clear_master(stoney_gpu_dev);
-//             // pci_dev_put(stoney_gpu_dev);
-//     }
-//     //END FIXES
-// #endif
+            /* NO iounmap() needed. We are abandoning this kernel. */
+            /* --- END GRBM SOFT RESET INJECTION --- */
+    }
+    //END FIXES
+#endif
 
     /* --- PHASE 3: SAFE COPYING (Interrupts OFF, NO malloc/sleep calls allowed) --- */
     
