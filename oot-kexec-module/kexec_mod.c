@@ -786,8 +786,8 @@ static void execute_trampoline(void)
             /* Give the SMU microcontroller time to boot its firmware before we pivot */
             mdelay(150);
 
-            pci_clear_master(stoney_gpu_dev);
-            pci_dev_put(stoney_gpu_dev);
+            // pci_clear_master(stoney_gpu_dev);
+            // pci_dev_put(stoney_gpu_dev);
     }
     //END FIXES
 #endif
