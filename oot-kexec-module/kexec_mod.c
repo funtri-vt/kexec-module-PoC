@@ -51,6 +51,8 @@
 #include "drivers/gpu/drm/amd/include/asic_reg/gca/gfx_8_0_sh_mask.h"
 #include "drivers/gpu/drm/amd/include/asic_reg/oss/oss_3_0_sh_mask.h"
 #include "drivers/gpu/drm/amd/include/asic_reg/oss/oss_3_0_d.h"
+#include "drivers/gpu/drm/amd/include/asic_reg/smu/smu_7_1_3_d.h"
+#include "drivers/gpu/drm/amd/include/asic_reg/smu/smu_7_1_3_sh_mask.h"
 
 /* Aliases for GFX8 GRBM Soft Reset Macros to prevent namespace collisions */
 #define GFX8_mmGRBM_SOFT_RESET                      mmGRBM_SOFT_RESET
@@ -63,6 +65,13 @@
 #define GFX8_GRBM_SOFT_RESET__SOFT_RESET_RLC_MASK   GRBM_SOFT_RESET__SOFT_RESET_RLC_MASK
 #define GFX8_GRBM_STATUS__CP_BUSY_MASK              GRBM_STATUS__CP_BUSY_MASK
 
+/* Alias SMU Mailbox registers from smu_7_1_3_d.h for Stoney Ridge */
+#define GFX8_mmSMC_MESSAGE_0    mmSMC_MESSAGE_0
+#define GFX8_mmSMC_RESP_0       mmSMC_RESP_0
+#define GFX8_mmSMC_MSG_ARG_0    mmSMC_MSG_ARG_0
+
+
+// aliases for srbm
 #define GFX8_mmSRBM_SOFT_RESET                      mmSRBM_SOFT_RESET
 #define GFX8_SRBM_SOFT_RESET__SOFT_RESET_SDMA_MASK  SRBM_SOFT_RESET__SOFT_RESET_SDMA_MASK
 #define GFX8_SRBM_SOFT_RESET__SOFT_RESET_SDMA1_MASK SRBM_SOFT_RESET__SOFT_RESET_SDMA1_MASK
@@ -802,6 +811,20 @@ static void execute_trampoline(void)
             } else {
                 printk(KERN_EMERG "kexec: GPU soft-reset completed safely via native macros.\n");
             }
+
+            /* --- SMU MAILBOX FORCE-IDLE FLUSH --- */
+            void __iomem *smc_msg  = stoney_mmio_base + (GFX8_mmSMC_MESSAGE_0 * 4);
+            void __iomem *smc_resp = stoney_mmio_base + (GFX8_mmSMC_RESP_0 * 4);
+
+            /* 1. Force response register to CMD_OK (0x1) */
+            iowrite32(1, smc_resp);
+
+            /* 2. Clear pending message ID */
+            iowrite32(0, smc_msg);
+    
+            /* 3. Flush PCI write queue */
+            (void)ioread32(smc_resp);
+            udelay(100);
 
             /* NO iounmap() needed. We are abandoning this kernel. */
             /* --- END GRBM SOFT RESET INJECTION --- */
