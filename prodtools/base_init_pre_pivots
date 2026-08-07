@@ -12,6 +12,12 @@ if [ "$BOARD_NAME" = "grunt" ]; then
     echo 1 > /sys/kernel/debug/dri/0/amdgpu_evict_vram
     sleep 1
     
+    echo "Unbinding vtconsoles..."
+    for vtcon in /sys/class/vtconsole/vtcon*; do
+        echo 0 > "$vtcon/bind" 2>/dev/null
+    done
+    sleep 1
+
     echo "Unbinding amdgpu driver..."
     # FIXED: Changed the last colon to a period, removed /dev/null to see errors
     echo -n "0000:00:01.0" > /sys/bus/pci/drivers/amdgpu/unbind
