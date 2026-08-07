@@ -1008,12 +1008,12 @@ static long kexec_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
             
 // #ifdef BOARD_NAME_GRUNT
 //             /* BARE-METAL UPGRADE: Find the GPU and store it in our global pointer */
-//             stoney_gpu_dev = pci_get_device(0x1002, 0x98E4, NULL);
-//             if (stoney_gpu_dev) {
-//                 if (stoney_gpu_dev->dev.driver) {
-//                     printk(KERN_EMERG "kexec: Intercepted AMD GPU! Nullifying shutdown hook...\n");
-//                     stoney_gpu_dev->dev.driver->shutdown = NULL;
-//                 }
+            stoney_gpu_dev = pci_get_device(0x1002, 0x98E4, NULL);
+            if (stoney_gpu_dev) {
+                if (stoney_gpu_dev->dev.driver) {
+                    printk(KERN_EMERG "kexec: Intercepted AMD GPU! Nullifying shutdown hook...\n");
+                    stoney_gpu_dev->dev.driver->shutdown = NULL;
+                }
 
 //                 /* Force the kernel to wake the GPU and assign PCI resources */
 //                 if (pci_enable_device(stoney_gpu_dev)) {
@@ -1069,7 +1069,7 @@ static long kexec_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 //                 } else {
 //                     printk(KERN_EMERG "kexec: FATAL - Could not find MMIO base address in hardware or kernel!\n");
 //                 }
-//             }
+            }
 // #endif
             mdelay(2000);
             /* BARE-METAL UPGRADE: Re-enabling ptr_device_shutdown to properly shutdown devices.*/
