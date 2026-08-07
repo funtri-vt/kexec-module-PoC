@@ -4,23 +4,21 @@ BOARD_NAME=$(cat /etc/cros_boardname)
 finit_loader lib/kexec_mod.ko
 
 if [ "$BOARD_NAME" = "grunt" ]; then
-    echo "Detected grunt board. Unbinding amdgpu driver in:"
-    echo "3"
-    sleep 1
-    echo "2"
-    sleep 1
-    echo "1"
-    sleep 1
+    echo "Detected grunt board. Prepping for clean GPU unbind..."
     killall -9 frecon-lite 2>/dev/null
     for pid in $(pidof frecon-lite); do kill -9 $pid 2>/dev/null; done
     sleep 1
+    
     echo 1 > /sys/kernel/debug/dri/0/amdgpu_evict_vram
     sleep 1
-    cat /sys/kernel/debug/dri/0/amdgpu_gpu_recover
+    
+    echo "Unbinding amdgpu driver..."
+    # FIXED: Changed the last colon to a period, removed /dev/null to see errors
+    echo -n "0000:00:01.0" > /sys/bus/pci/drivers/amdgpu/unbind
+    
     sleep 3
-    echo -n "0000:00:01:0" > /sys/bus/pci/drivers/amdgpu/unbind 2>/dev/null
-    sleep 2
 else
     sleep 1
 fi
+
 custom_kexec -c "console=ttyS0,115200 board_id=$BOARD_NAME no_console_suspend reset_devices iommu=pt"
