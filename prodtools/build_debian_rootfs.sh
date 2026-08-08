@@ -91,7 +91,7 @@ chmod +x "$MOUNT_DIR/tmp/debian_chroot_setup.sh"
 
 echo "  [*] Entering Chroot..."
 # Execute the chroot environment, passing control to the setup script
-chroot "$MOUNT_DIR" /bin/bash /tmp/debian_chroot_setup.sh
+chroot "$MOUNT_DIR" /bin/bash -c "/tmp/debian_chroot_setup.sh $BOARD"
 
 echo "  [+] Chroot execution completed successfully."
 
