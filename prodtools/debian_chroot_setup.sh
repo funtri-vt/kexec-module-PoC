@@ -31,10 +31,12 @@ apt-get install -y \
     sudo \
     systemd \
     systemd-sysv \
-    firmware-amd-graphics
+    firmware-amd-graphics \
+    firmware-atheros
 
+apt-get upgrade -y
 # Force initramfs-tools to include all firmware and drivers (crucial for cross-hardware builds)
-sed -i 's/^MODULES=.*/MODULES=most/' /etc/initramfs-tools/initramfs.conf
+# sed -i 's/^MODULES=.*/MODULES=most/' /etc/initramfs-tools/initramfs.conf
 
 echo "amdgpu" >> /etc/initramfs-tools/modules
 echo "xhci_pci" >> /etc/initramfs-tools/modules
@@ -44,7 +46,11 @@ echo "uas" >> /etc/initramfs-tools/modules
 echo "dwc3" >> /etc/initramfs-tools/modules
 echo "dwc3-pci" >> /etc/initramfs-tools/modules
 echo "phy-amd-pt" >> /etc/initramfs-tools/modules
-
+echo "hid_generic" >> /etc/initramfs-tools/modules
+echo "usbhid" >> /etc/initramfs-tools/modules
+echo "i2c_hid" >> /etc/initramfs-tools/modules
+echo "i2c_hid_acpi" >> /etc/initramfs-tools/modules
+echo "i2c_amd_mp2" >> /etc/initramfs-tools/modules
 
 # --- FORCE AMDGPU FIRMWARE INCLUSION ---
 echo "[*] Creating initramfs hook to force-pack AMD firmware..."
