@@ -32,7 +32,15 @@ apt-get install -y \
     systemd \
     systemd-sysv \
     firmware-amd-graphics \
-    firmware-atheros
+    firmware-atheros \
+    alsa-ucm-conf \
+    firmware-misc-nonfree \
+    cloud-utils \
+    zram-tools \
+    command-not-found \
+    bash-completion \
+    libfuse2 \
+    libfuse3-*
 
 apt-get install -y cloud-utils zram-tools sudo command-not-found bash-completion libfuse2 libfuse3-*
 
