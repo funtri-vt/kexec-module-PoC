@@ -95,11 +95,15 @@ echo " ExecBoot: First Boot Environment Setup"
 echo "=========================================================="
 
 # --- Phase 1: Auto-Expand Partition ---
-# Dynamically determine the root block device
-ROOT_DEV=$(findmnt -n -o SOURCE /)
+# Dynamically determine the root block device (use -e to evaluate UUIDs/symlinks to real paths)
+ROOT_DEV=$(findmnt -n -e -o SOURCE /)
+
 # Extract the base disk (e.g., /dev/sda) and partition number (e.g., 5)
 DISK="/dev/$(lsblk -no PKNAME "$ROOT_DEV" | head -n1)"
 PARTNUM=$(lsblk -no PARTN "$ROOT_DEV" | head -n1)
+
+# Strip any hidden whitespace or non-numeric characters from the lsblk output
+PARTNUM="${PARTNUM//[^0-9]/}"
 
 if [ -n "$DISK" ] && [ -n "$PARTNUM" ]; then
     echo "Expanding $DISK partition $PARTNUM..."
@@ -110,7 +114,8 @@ else
 fi
 
 # --- Phase 2: Network Initialization ---
-while ! ping -c 1 -W 3 deb.debian.org &> /dev/null; then
+# FIX: Changed 'then' to 'do'
+while ! ping -c 1 -W 3 deb.debian.org &> /dev/null; do
     if whiptail --title "Network Required" --yesno "No internet connection detected.\n\nDo you need to configure Wi-Fi?" 10 50; then
         nmtui-connect
     else
@@ -128,7 +133,8 @@ done
 
 PASSWORD=""
 PASSWORD_CONFIRM="x"
-while [ "$PASSWORD" != "$PASSWORD_CONFIRM" ]; do
+# FIX: Ensure password is not empty and that both entries match
+while [ -z "$PASSWORD" ] || [ "$PASSWORD" != "$PASSWORD_CONFIRM" ]; do
     PASSWORD=$(whiptail --title "User Creation" --passwordbox "Enter password for $NEW_USER:" 10 40 3>&1 1>&2 2>&3)
     PASSWORD_CONFIRM=$(whiptail --title "User Creation" --passwordbox "Confirm password:" 10 40 3>&1 1>&2 2>&3)
 
@@ -158,7 +164,7 @@ case $CHOICE in
     1) apt-get install -y task-gnome-desktop ;;
     2) apt-get install -y task-kde-desktop ;;
     3) apt-get install -y task-xfce-desktop ;;
-    4) echo "Skipping DE installation." ;;
+    4|*) echo "Skipping DE installation." ;; # Catch-all for CLI or if user pressed Cancel
 esac
 
 # --- Phase 5: Teardown & Handoff ---
@@ -166,7 +172,14 @@ echo "Setup complete! Disabling first-boot script..."
 systemctl disable firstboot-setup.service
 
 whiptail --title "Complete" --msgbox "Installation finished. Press OK to start your environment." 8 45
-systemctl isolate graphical.target
+
+# FIX: Only isolate graphical target if a GUI was actually installed
+if [[ "$CHOICE" =~ ^[1-3]$ ]]; then
+    systemctl isolate graphical.target
+else
+    # Drop to terminal instead of hanging trying to load a missing GUI
+    systemctl isolate multi-user.target 
+fi
 EOF
 
 chmod +x /usr/local/bin/firstboot-setup.sh
