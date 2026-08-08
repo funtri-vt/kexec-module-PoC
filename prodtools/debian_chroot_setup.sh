@@ -34,6 +34,8 @@ apt-get install -y \
     firmware-amd-graphics \
     firmware-atheros
 
+  apt-get install -y cloud-utils zram-tools sudo command-not-found bash-completion libfuse2 libfuse3-* croskbd
+
 apt-get upgrade -y
 # Force initramfs-tools to include all firmware and drivers (crucial for cross-hardware builds)
 # sed -i 's/^MODULES=.*/MODULES=most/' /etc/initramfs-tools/initramfs.conf
