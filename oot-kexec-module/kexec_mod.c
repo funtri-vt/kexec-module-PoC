@@ -87,6 +87,17 @@
 #define GFX8_ixSMC_SYSCON_RESET_CNTL   ixSMC_SYSCON_RESET_CNTL
 #define GFX8_ixSMC_SYSCON_CLOCK_CNTL_0 ixSMC_SYSCON_CLOCK_CNTL_0
 
+/* GFX8 CP Halt Registers and Masks */
+#define GFX8_mmCP_ME_CNTL  mmCP_ME_CNTL
+#define GFX8_mmCP_MEC_CNTL mmCP_MEC_CNTL
+
+#define GFX8_CP_ME_CNTL__ME_HALT_MASK   CP_ME_CNTL__ME_HALT_MASK
+#define GFX8_CP_ME_CNTL__PFP_HALT_MASK  CP_ME_CNTL__PFP_HALT_MASK
+#define GFX8_CP_ME_CNTL__CE_HALT_MASK   CP_ME_CNTL__CE_HALT_MASK
+
+#define GFX8_CP_MEC_CNTL__MEC_ME1_HALT_MASK CP_MEC_CNTL__MEC_ME1_HALT_MASK
+#define GFX8_CP_MEC_CNTL__MEC_ME2_HALT_MASK CP_MEC_CNTL__MEC_ME2_HALT_MASK
+
 /* Global pointer for the intercepted Grunt GPU */
 static struct pci_dev *stoney_gpu_dev = NULL;
 static void __iomem *stoney_mmio_base = NULL;
@@ -743,6 +754,30 @@ static void execute_trampoline(void)
 #ifdef BOARD_NAME_GRUNT
     // BEGIN FIXES
     if (stoney_gpu_dev && stoney_mmio_base) {
+            /* --- 1. HALT THE COMMAND PROCESSORS --- */
+            /* We MUST halt the CP before resetting it, otherwise it will wake up 
+             * during the kexec boot, fetch garbage memory, and fatally page-fault. */
+            void __iomem *cp_me_cntl = stoney_mmio_base + (GFX8_mmCP_ME_CNTL * 4);
+            void __iomem *cp_mec_cntl = stoney_mmio_base + (GFX8_mmCP_MEC_CNTL * 4);
+            u32 halt_tmp;
+
+            printk(KERN_EMERG "kexec: Halting CP ME, PFP, CE, and MEC...\n");
+
+            /* Halt Graphics/Compute CP */
+            halt_tmp = ioread32(cp_me_cntl);
+            halt_tmp |= (GFX8_CP_ME_CNTL__ME_HALT_MASK | 
+                         GFX8_CP_ME_CNTL__PFP_HALT_MASK | 
+                         GFX8_CP_ME_CNTL__CE_HALT_MASK);
+            iowrite32(halt_tmp, cp_me_cntl);
+
+            /* Halt Compute MEC */
+            halt_tmp = ioread32(cp_mec_cntl);
+            halt_tmp |= (GFX8_CP_MEC_CNTL__MEC_ME1_HALT_MASK | 
+                         GFX8_CP_MEC_CNTL__MEC_ME2_HALT_MASK);
+            iowrite32(halt_tmp, cp_mec_cntl);
+
+            (void)ioread32(cp_mec_cntl); /* Flush PCI writes */
+            udelay(50);
             /* --- BEGIN GRBM SOFT RESET INJECTION --- */
             /* We are completely atomic here. No IRQs, no other CPUs. */
 
