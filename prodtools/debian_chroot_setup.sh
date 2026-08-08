@@ -179,15 +179,9 @@ esac
 echo "Setup complete! Disabling first-boot script..."
 systemctl disable firstboot-setup.service
 
-whiptail --title "Complete" --msgbox "Installation finished. Press OK to start your environment." 8 45
+whiptail --title "Complete" --msgbox "Installation finished. Press OK to reboot." 8 45
 
-# FIX: Only isolate graphical target if a GUI was actually installed
-if [[ "$CHOICE" =~ ^[1-3]$ ]]; then
-    systemctl isolate graphical.target
-else
-    # Drop to terminal instead of hanging trying to load a missing GUI
-    systemctl isolate multi-user.target 
-fi
+reboot
 EOF
 
 chmod +x /usr/local/bin/firstboot-setup.sh
