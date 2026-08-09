@@ -5,6 +5,8 @@
 set -e
 set -o pipefail
 
+BOARD="$1"
+
 # Dynamically calculate the workspace root folder
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -91,7 +93,7 @@ chmod +x "$MOUNT_DIR/tmp/debian_chroot_setup.sh"
 
 echo "  [*] Entering Chroot..."
 # Execute the chroot environment, passing control to the setup script
-chroot "$MOUNT_DIR" /bin/bash -c "/tmp/debian_chroot_setup.sh $BOARD"
+chroot "$MOUNT_DIR" /bin/bash -c '/tmp/debian_chroot_setup.sh "$1"' -- "$BOARD"
 
 echo "  [+] Chroot execution completed successfully."
 

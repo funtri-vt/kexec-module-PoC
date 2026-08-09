@@ -60,7 +60,7 @@ echo "  [+] /etc/cros_boardname installed."
 echo "[*] Step 3: Building Debian 13 Base Rootfs..."
 DEBIAN_BUILDER="$WORKSPACE/prodtools/build_debian_rootfs.sh"
 if [ -f "$DEBIAN_BUILDER" ]; then
-    sudo bash "$DEBIAN_BUILDER"
+    sudo bash "$DEBIAN_BUILDER" "$1"
 else
     echo "  [-] Error: Debian builder script not found at $DEBIAN_BUILDER"
     exit 1

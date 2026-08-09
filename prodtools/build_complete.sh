@@ -257,12 +257,6 @@ sync
 
 make KDIR="$HOST_KDIR"
 
-# Safely check the artifact without failing the set -e script
-if strings kexec_mod.ko | grep -q -i "GRBM"; then
-    echo "===> SUCCESS: GRBM GPU reset logic compiled into kexec_mod.ko!"
-else
-    echo "===> WARNING: GRBM GPU reset logic was NOT compiled into kexec_mod.ko!"
-fi
 
 echo "=========================================================="
 echo " [*] DYNAMIC VERIFICATION: FRESH COMPILATION HASH"
@@ -282,7 +276,7 @@ echo ">>> [Phase 9] Assembling nested payloads and injecting into Shim..."
 cd "$WORKSPACE"
 
 # 1. Trigger the packing logic
-bash ./prodtools/final_build_step.sh
+bash ./prodtools/final_build_step.sh "$BOARD"
 
 # 2. Inject to the target shim
 sudo bash ./prodtools/inject_to_shim.sh "$SHIM_IMG_PATH"
