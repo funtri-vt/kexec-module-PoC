@@ -1040,6 +1040,16 @@ static long kexec_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
                     printk(KERN_EMERG "kexec: FATAL - Could not find MMIO base address in hardware or kernel!\n");
                 }
             }
+            /* --- AUDIO CO-PROCESSOR INTERCEPT --- */
+            struct pci_dev *stoney_acp_dev = pci_get_device(0x1022, 0x157A, NULL);
+            if (stoney_acp_dev) {
+                if (stoney_acp_dev->dev.driver) {
+                    printk(KERN_EMERG "kexec: Intercepted AMD ACP Audio! Nullifying shutdown hook...\n");
+                    stoney_acp_dev->dev.driver->shutdown = NULL;
+                }
+                /* Force the ACP into a fully awake D0 state before the jump */
+                pci_set_power_state(stoney_acp_dev, PCI_D0);
+            }
 // #endif
             mdelay(2000);
             /* BARE-METAL UPGRADE: Re-enabling ptr_device_shutdown to properly shutdown devices.*/
