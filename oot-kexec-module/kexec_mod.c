@@ -35,6 +35,7 @@
 #include <linux/screen_info.h>
 #include <linux/delay.h>
 #include <linux/pci.h>
+#include <linux/pm_runtime.h>
 
 //asm includes
 #include <asm/io.h>
@@ -1043,11 +1044,13 @@ static long kexec_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
             /* --- AUDIO CO-PROCESSOR INTERCEPT --- */
             struct pci_dev *stoney_acp_dev = pci_get_device(0x1022, 0x157A, NULL);
             if (stoney_acp_dev) {
+                printk(KERN_EMERG "kexec: Intercepted AMD ACP Audio! Waking it up and nullifying shutdown hook...\n");
+                (void)pm_runtime_get_sync(&stoney_acp_dev->dev);
                 if (stoney_acp_dev->dev.driver) {
-                    printk(KERN_EMERG "kexec: Intercepted AMD ACP Audio! Nullifying shutdown hook...\n");
+                    printk(KERN_EMERG "kexec: Nullifying ACP shutdown hook...\n");
                     stoney_acp_dev->dev.driver->shutdown = NULL;
                 }
-                /* Force the ACP into a fully awake D0 state before the jump */
+                /* Ensure PCI config space matches the awake hardware*/
                 pci_set_power_state(stoney_acp_dev, PCI_D0);
             }
 // #endif
