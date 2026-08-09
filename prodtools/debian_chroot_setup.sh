@@ -3,7 +3,7 @@
 
 set -e
 
-BOARD_ID = "$1"
+BOARD_ID="$1"
 
 echo "=========================================================="
 echo " Executing Debian Chroot Configuration for board $BOARD_ID..."

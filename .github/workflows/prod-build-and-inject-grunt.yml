@@ -55,3 +55,9 @@ jobs:
           name: patched-shimboot-image
           path: shimboot_grunt.bin
           if-no-files-found: error
+      - name: Upload kexec_mod.ko Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kexec_mod
+          path: oot-kexec-module/kexec_mod.ko
+          if-no-files-found: error
