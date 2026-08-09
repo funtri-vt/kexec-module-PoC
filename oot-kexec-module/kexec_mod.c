@@ -1041,17 +1041,32 @@ static long kexec_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
                     printk(KERN_EMERG "kexec: FATAL - Could not find MMIO base address in hardware or kernel!\n");
                 }
             }
-            /* --- AUDIO CO-PROCESSOR INTERCEPT --- */
-            struct pci_dev *stoney_acp_dev = pci_get_device(0x1022, 0x157A, NULL);
-            if (stoney_acp_dev) {
-                printk(KERN_EMERG "kexec: Intercepted AMD ACP Audio! Waking it up and nullifying shutdown hook...\n");
-                (void)pm_runtime_get_sync(&stoney_acp_dev->dev);
-                if (stoney_acp_dev->dev.driver) {
-                    printk(KERN_EMERG "kexec: Nullifying ACP shutdown hook...\n");
-                    stoney_acp_dev->dev.driver->shutdown = NULL;
+            /* --- AUDIO CO-PROCESSOR & BRIDGE WAKEUP --- */
+            struct pci_dev *audio_dev = NULL;
+            
+            /* Loop through all AMD devices (Vendor 0x1022) */
+            while ((audio_dev = pci_get_device(0x1022, PCI_ANY_ID, audio_dev)) != NULL) {
+                
+                /* Check if it's the Dummy Host Bridge (157d) OR any known Stoney ACP ID */
+                if (audio_dev->device == 0x157d || 
+                    audio_dev->device == 0x157e || 
+                    audio_dev->device == 0x15be || 
+                    audio_dev->device == 0x1579 || 
+                    audio_dev->device == 0x157a) {
+                    
+                    printk(KERN_EMERG "kexec: Found AMD Audio/Bridge [1022:%04x]! Waking...\n", audio_dev->device);
+                    
+                    /* Wake it up physically via the host driver PM */
+                    (void)pm_runtime_get_sync(&audio_dev->dev);
+                    
+                    /* Blindfold the kernel so it doesn't power it back down */
+                    if (audio_dev->dev.driver) {
+                        audio_dev->dev.driver->shutdown = NULL;
+                    }
+                    
+                    /* Force software state to Awake */
+                    pci_set_power_state(audio_dev, PCI_D0);
                 }
-                /* Ensure PCI config space matches the awake hardware*/
-                pci_set_power_state(stoney_acp_dev, PCI_D0);
             }
 // #endif
             mdelay(2000);
