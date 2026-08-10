@@ -46,7 +46,7 @@ apt-get install -y \
     libfuse3-*
 
 apt-get upgrade -y
-apt-get install -t trixie-backports linux-image-amd64 linux-headers-amd64
+apt-get install -t trixie-backports -y linux-image-amd64 linux-headers-amd64
 # Force initramfs-tools to include all firmware and drivers (crucial for cross-hardware builds)
 # sed -i 's/^MODULES=.*/MODULES=most/' /etc/initramfs-tools/initramfs.conf
 
