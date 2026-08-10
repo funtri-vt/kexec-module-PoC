@@ -13,6 +13,6 @@ This project is a WIP, AI-assisted(for now) attempt at getting kexec support for
 |`octopus`          |In progress(priority)    |
 
 ## Board Support Status
-| Target Board Name | Speakers | WiFi | Headphone Jack | X11         |
-|:------------------|:---------|:-----|:---------------|:------------|
-|`grunt`            | not yet  | yes  | untested       | I think so? |
+| Target Board Name | Speakers | WiFi | Headphone Jack | X11 | Touchscreen | 
+|:------------------|:---------|:-----|:---------------|:----|:------------|
+|`grunt`            | yes      | yes  | untested       | yes | not yet     |
