@@ -14,7 +14,6 @@ echo "[*] Configuring apt sources for non-free-firmware..."
 cat << 'EOF' > /etc/apt/sources.list
 deb http://deb.debian.org/debian/ trixie main contrib non-free non-free-firmware
 deb-src http://deb.debian.org/debian/ trixie main contrib non-free non-free-firmware
-deb http://deb.debian.org/debian trixie-backports main
 EOF
 
 # 1. Update and install core dependencies
@@ -41,11 +40,12 @@ apt-get install -y \
     command-not-found \
     bash-completion \
     libfuse2 \
-    libfuse3-*
+    libfuse3-* \
+    initramfs-tools \
+    linux-image-amd64
+    linux-headers-amd64
 
 apt-get upgrade -y
-apt-get install -t trixie-backports -y linux-image-amd64 linux-headers-amd64
-apt-get install -y initramfs-tools
 # Force initramfs-tools to include all firmware and drivers (crucial for cross-hardware builds)
 # sed -i 's/^MODULES=.*/MODULES=most/' /etc/initramfs-tools/initramfs.conf
 
@@ -183,6 +183,21 @@ case $CHOICE in
     3) apt-get install -y task-xfce-desktop ;;
     4|*) echo "Skipping DE installation." ;; # Catch-all for CLI or if user pressed Cancel
 esac
+
+# --- Phase 4.5: Kernel Upgrade (Backports) ---
+echo "Configuring backports repository for kernel upgrade..."
+
+# Safely append the backports repo
+echo "deb http://deb.debian.org/debian trixie-backports main" > /etc/apt/sources.list.d/backports.list
+
+echo "Updating package databases..."
+apt-get update -y
+
+echo "Upgrading kernel and headers from backports..."
+apt-get install -t trixie-backports -y linux-image-amd64 linux-headers-amd64
+
+# Ensure the initramfs is updated with the new kernel and our forced AMD firmware
+update-initramfs -u -k all
 
 # --- Phase 5: Teardown & Handoff ---
 echo "Setup complete! Disabling first-boot script..."
