@@ -42,7 +42,7 @@ apt-get install -y \
     libfuse2 \
     libfuse3-* \
     initramfs-tools \
-    linux-image-amd64
+    linux-image-amd64 \
     linux-headers-amd64
 
 apt-get upgrade -y
