@@ -24,8 +24,6 @@ apt-get update
 
 # Install kernel, initramfs tools, networking tools, and utilities
 apt-get install -y \
-    linux-image-amd64 \
-    initramfs-tools \
     whiptail \
     network-manager \
     wpasupplicant \
@@ -47,6 +45,7 @@ apt-get install -y \
 
 apt-get upgrade -y
 apt-get install -t trixie-backports -y linux-image-amd64 linux-headers-amd64
+apt-get install -y initramfs-tools
 # Force initramfs-tools to include all firmware and drivers (crucial for cross-hardware builds)
 # sed -i 's/^MODULES=.*/MODULES=most/' /etc/initramfs-tools/initramfs.conf
 
