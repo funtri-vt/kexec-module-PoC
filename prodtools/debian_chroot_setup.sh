@@ -123,22 +123,19 @@ install_with_progress() {
         export DEBIAN_FRONTEND=noninteractive
         apt-get install -y -o APT::Status-Fd=3 "${args[@]}" 3>&1 1>/dev/null 2>&1 | \
         awk -F: '
-        BEGIN { last_pct = -1; last_time = systime() }
+        BEGIN { last_time = systime() }
         
         /^dlstatus:/ {
             pct = int($3 * 0.50)
             desc = $4
             for (i=5; i<=NF; i++) { desc = desc ":" $i }
-            
-            # Strip out APTs wildly inaccurate time estimates to prevent visual freezing
             sub(/ \([^\)]+ remaining\)/, "", desc)
             
             now = systime()
-            # TIME THROTTLE: Only update if the % moves, or if 1 full second has passed
-            if (pct != last_pct || now - last_time >= 1) {
+            # STRICT DEBOUNCE: Only update once per second, OR if we hit exactly 50% (end of download phase)
+            if (now - last_time >= 1 || pct == 50) {
                 printf "XXX\n%d\n[Downloading] %s\nXXX\n", pct, substr(desc, 1, 55)
                 fflush()
-                last_pct = pct
                 last_time = now
             }
         }
@@ -148,10 +145,10 @@ install_with_progress() {
             for (i=5; i<=NF; i++) { desc = desc ":" $i }
             
             now = systime()
-            if (pct != last_pct || now - last_time >= 1) {
+            # STRICT DEBOUNCE: Only update once per second, OR if we hit exactly 100%
+            if (now - last_time >= 1 || pct == 100) {
                 printf "XXX\n%d\n[Installing] %s\nXXX\n", pct, substr(desc, 1, 55)
                 fflush()
-                last_pct = pct
                 last_time = now
             }
         }'
@@ -163,17 +160,30 @@ update_with_progress() {
     (
         apt-get update -y -o APT::Status-Fd=3 3>&1 1>/dev/null 2>&1 | \
         awk -F: '
-        BEGIN { last_pct = -1; last_time = systime() }
+        BEGIN { last_time = systime() }
+        
         /^dlstatus:/ {
-            pct = int($3)
+            pct = int($3 * 0.50)
+            desc = $4
+            for (i=5; i<=NF; i++) { desc = desc ":" $i }
+            sub(/ \([^\)]+ remaining\)/, "", desc)
+            
+            now = systime()
+            if (now - last_time >= 1 || pct == 50) {
+                printf "XXX\n%d\n[Downloading] %s\nXXX\n", pct, substr(desc, 1, 55)
+                fflush()
+                last_time = now
+            }
+        }
+        /^pmstatus:/ {
+            pct = 50 + int($3 * 0.50)
             desc = $4
             for (i=5; i<=NF; i++) { desc = desc ":" $i }
             
             now = systime()
-            if (pct != last_pct || now - last_time >= 1) {
-                printf "XXX\n%d\n%s\nXXX\n", pct, substr(desc, 1, 65)
+            if (now - last_time >= 1 || pct == 100) {
+                printf "XXX\n%d\n[Installing] %s\nXXX\n", pct, substr(desc, 1, 55)
                 fflush()
-                last_pct = pct
                 last_time = now
             }
         }'
@@ -186,7 +196,8 @@ upgrade_with_progress() {
         export DEBIAN_FRONTEND=noninteractive
         apt-get upgrade -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" -o APT::Status-Fd=3 3>&1 1>/dev/null 2>&1 | \
         awk -F: '
-        BEGIN { last_pct = -1; last_time = systime() }
+        BEGIN { last_time = systime() }
+        
         /^dlstatus:/ {
             pct = int($3 * 0.50)
             desc = $4
@@ -194,10 +205,9 @@ upgrade_with_progress() {
             sub(/ \([^\)]+ remaining\)/, "", desc)
             
             now = systime()
-            if (pct != last_pct || now - last_time >= 1) {
+            if (now - last_time >= 1 || pct == 50) {
                 printf "XXX\n%d\n[Downloading] %s\nXXX\n", pct, substr(desc, 1, 55)
                 fflush()
-                last_pct = pct
                 last_time = now
             }
         }
@@ -207,10 +217,9 @@ upgrade_with_progress() {
             for (i=5; i<=NF; i++) { desc = desc ":" $i }
             
             now = systime()
-            if (pct != last_pct || now - last_time >= 1) {
-                printf "XXX\n%d\n[Upgrading] %s\nXXX\n", pct, substr(desc, 1, 55)
+            if (now - last_time >= 1 || pct == 100) {
+                printf "XXX\n%d\n[Installing] %s\nXXX\n", pct, substr(desc, 1, 55)
                 fflush()
-                last_pct = pct
                 last_time = now
             }
         }'
