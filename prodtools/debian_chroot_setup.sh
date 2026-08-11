@@ -172,113 +172,30 @@ EOF
 cat << 'EOF' > /usr/local/bin/install_helper_funcs.sh
 #!/bin/bash
 
-# Apply the global UI theme to all dialog commands(fine to put here as this is included by both scripts)
+# Apply the global UI theme to all dialog commands (fine to put here as this is included by both scripts)
 export DIALOGRC="/etc/execboot-theme.rc"
 
 install_with_progress() {
+    # Note: debconf-apt-progress handles titles natively based on package names, 
+    # so we consume $1 but rely on the tool for the actual UI text.
     local title="$1"
     shift
     local args=("$@")
 
-    (
-        export DEBIAN_FRONTEND=noninteractive
-        apt-get install -y -o APT::Status-Fd=3 "${args[@]}" 3>&1 1>/dev/tty3 2>&1 | \
-        awk -F: '
-        BEGIN { msg_count = 0; last_pct = -1 }
-        
-        /^dlstatus:/ {
-            pct = int($3 * 0.50)
-            desc = $4
-            for (i=5; i<=NF; i++) { desc = desc ":" $i }
-            sub(/ \([^\)]+ remaining\)/, "", desc)
-            
-            # MAWK DEBOUNCE: Update on % change, every 15th line, or at exactly 50%
-            if (pct != last_pct || msg_count++ % 15 == 0 || pct == 50) {
-                printf "XXX\n%d\n[Downloading] %s\nXXX\n", pct, substr(desc, 1, 55)
-                fflush()
-                last_pct = pct
-            }
-        }
-        /^pmstatus:/ {
-            pct = 50 + int($3 * 0.50)
-            desc = $4
-            for (i=5; i<=NF; i++) { desc = desc ":" $i }
-            
-            # MAWK DEBOUNCE: Update on % change, every 15th line, or at exactly 100%
-            if (pct != last_pct || msg_count++ % 15 == 0 || pct == 100) {
-                printf "XXX\n%d\n[Installing] %s\nXXX\n", pct, substr(desc, 1, 55)
-                fflush()
-                last_pct = pct
-            }
-        }'
-    ) | dialog --title "$title" --gauge "Resolving dependencies (This may take several minutes)..." 10 75 0
+    export DEBIAN_FRONTEND=dialog
+    debconf-apt-progress --logfile /dev/tty3 -- apt-get install -y "${args[@]}"
 }
 
 update_with_progress() {
-    local title="${1:-Updating Package Lists}"
-    (
-        apt-get update -y -o APT::Status-Fd=3 3>&1 1>/dev/tty3 2>&1 | \
-        awk -F: '
-        BEGIN { msg_count = 0; last_pct = -1 }
-        
-        /^dlstatus:/ {
-            pct = int($3 * 0.50)
-            desc = $4
-            for (i=5; i<=NF; i++) { desc = desc ":" $i }
-            sub(/ \([^\)]+ remaining\)/, "", desc)
-            
-            if (pct != last_pct || msg_count++ % 15 == 0 || pct == 50) {
-                printf "XXX\n%d\n[Downloading] %s\nXXX\n", pct, substr(desc, 1, 55)
-                fflush()
-                last_pct = pct
-            }
-        }
-        /^pmstatus:/ {
-            pct = 50 + int($3 * 0.50)
-            desc = $4
-            for (i=5; i<=NF; i++) { desc = desc ":" $i }
-            
-            if (pct != last_pct || msg_count++ % 15 == 0 || pct == 100) {
-                printf "XXX\n%d\n[Installing] %s\nXXX\n", pct, substr(desc, 1, 55)
-                fflush()
-                last_pct = pct
-            }
-        }'
-    ) | dialog --title "$title" --gauge "Connecting to repositories..." 10 75 0
+    export DEBIAN_FRONTEND=dialog
+    debconf-apt-progress --logfile /dev/tty3 -- apt-get update -y
 }
 
 upgrade_with_progress() {
-    local title="${1:-Upgrading System Packages}"
-    (
-        export DEBIAN_FRONTEND=noninteractive
-        apt-get upgrade -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" -o APT::Status-Fd=3 3>&1 1>/dev/tty3 2>&1 | \
-        awk -F: '
-        BEGIN { msg_count = 0; last_pct = -1 }
-        
-        /^dlstatus:/ {
-            pct = int($3 * 0.50)
-            desc = $4
-            for (i=5; i<=NF; i++) { desc = desc ":" $i }
-            sub(/ \([^\)]+ remaining\)/, "", desc)
-            
-            if (pct != last_pct || msg_count++ % 15 == 0 || pct == 50) {
-                printf "XXX\n%d\n[Downloading] %s\nXXX\n", pct, substr(desc, 1, 55)
-                fflush()
-                last_pct = pct
-            }
-        }
-        /^pmstatus:/ {
-            pct = 50 + int($3 * 0.50)
-            desc = $4
-            for (i=5; i<=NF; i++) { desc = desc ":" $i }
-            
-            if (pct != last_pct || msg_count++ % 15 == 0 || pct == 100) {
-                printf "XXX\n%d\n[Installing] %s\nXXX\n", pct, substr(desc, 1, 55)
-                fflush()
-                last_pct = pct
-            }
-        }'
-    ) | dialog --title "$title" --gauge "Resolving dependencies (This may take several minutes)..." 10 75 0
+    export DEBIAN_FRONTEND=dialog
+    debconf-apt-progress --logfile /dev/tty3 -- apt-get upgrade -y \
+        -o Dpkg::Options::="--force-confdef" \
+        -o Dpkg::Options::="--force-confold"
 }
 EOF
 
