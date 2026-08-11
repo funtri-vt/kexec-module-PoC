@@ -113,7 +113,7 @@ echo "debian-execboot" > /etc/hostname
 
 cat << 'EOF' > /usr/local/bin/install_helper_funcs.sh
 #!/bin/bash
-# Helper function to install packages with a dynamic Whiptail progress bar
+
 install_with_progress() {
     local title="$1"
     shift
@@ -122,69 +122,86 @@ install_with_progress() {
     (
         export DEBIAN_FRONTEND=noninteractive
         apt-get install -y -o APT::Status-Fd=3 "${args[@]}" 3>&1 1>/dev/null 2>&1 | \
-        awk -F: '/^dlstatus:/ {
-            # Scale downloads to take up 0% to 50% of the bar (feels much faster)
+        awk -F: '
+        # Initialize our throttle counters
+        BEGIN { last_pct = -1; dl_count = 0; pm_count = 0 }
+        
+        /^dlstatus:/ {
             pct = int($3 * 0.50)
             desc = $4
             for (i=5; i<=NF; i++) { desc = desc ":" $i }
-            # Truncate to 55 chars to prevent Whiptail word-wrap breakage
-            printf "XXX\n%d\n[Downloading] %s\nXXX\n", pct, substr(desc, 1, 55)
-            fflush()
+            
+            # THROTTLE: Only tell Whiptail to redraw if the % changes, or every 20th file
+            if (pct != last_pct || dl_count++ % 20 == 0) {
+                printf "XXX\n%d\n[Downloading] %s\nXXX\n", pct, substr(desc, 1, 55)
+                fflush()
+                last_pct = pct
+            }
         }
         /^pmstatus:/ {
-            # Scale installations to take up 50% to 100% of the bar
             pct = 50 + int($3 * 0.50)
             desc = $4
             for (i=5; i<=NF; i++) { desc = desc ":" $i }
-            printf "XXX\n%d\n[Installing] %s\nXXX\n", pct, substr(desc, 1, 55)
-            fflush()
+            
+            # THROTTLE: Only tell Whiptail to redraw if the % changes, or every 10th package
+            if (pct != last_pct || pm_count++ % 10 == 0) {
+                printf "XXX\n%d\n[Installing] %s\nXXX\n", pct, substr(desc, 1, 55)
+                fflush()
+                last_pct = pct
+            }
         }'
     ) | whiptail --title "$title" --gauge "Resolving dependencies (This may take several minutes)..." 10 75 0
 }
 
 update_with_progress() {
     local title="${1:-Updating Package Lists}"
-    
     (
         apt-get update -y -o APT::Status-Fd=3 3>&1 1>/dev/null 2>&1 | \
-        awk -F: '/^dlstatus:/ {
+        awk -F: '
+        BEGIN { last_pct = -1; count = 0 }
+        /^dlstatus:/ {
             pct = int($3)
             desc = $4
             for (i=5; i<=NF; i++) { desc = desc ":" $i }
-            printf "XXX\n%d\n%s\nXXX\n", pct, substr(desc, 1, 65)
-            fflush()
+            if (pct != last_pct || count++ % 5 == 0) {
+                printf "XXX\n%d\n%s\nXXX\n", pct, substr(desc, 1, 65)
+                fflush()
+                last_pct = pct
+            }
         }'
     ) | whiptail --title "$title" --gauge "Connecting to repositories..." 10 75 0
 }
 
 upgrade_with_progress() {
     local title="${1:-Upgrading System Packages}"
-    
     (
         export DEBIAN_FRONTEND=noninteractive
-        apt-get upgrade -y \
-            -o Dpkg::Options::="--force-confdef" \
-            -o Dpkg::Options::="--force-confold" \
-            -o APT::Status-Fd=3 3>&1 1>/dev/null 2>&1 | \
-        awk -F: '/^dlstatus:/ {
+        apt-get upgrade -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" -o APT::Status-Fd=3 3>&1 1>/dev/null 2>&1 | \
+        awk -F: '
+        BEGIN { last_pct = -1; dl_count = 0; pm_count = 0 }
+        /^dlstatus:/ {
             pct = int($3 * 0.50)
             desc = $4
             for (i=5; i<=NF; i++) { desc = desc ":" $i }
-            printf "XXX\n%d\n[Downloading] %s\nXXX\n", pct, substr(desc, 1, 55)
-            fflush()
+            if (pct != last_pct || dl_count++ % 20 == 0) {
+                printf "XXX\n%d\n[Downloading] %s\nXXX\n", pct, substr(desc, 1, 55)
+                fflush()
+                last_pct = pct
+            }
         }
         /^pmstatus:/ {
             pct = 50 + int($3 * 0.50)
             desc = $4
             for (i=5; i<=NF; i++) { desc = desc ":" $i }
-            printf "XXX\n%d\n[Upgrading] %s\nXXX\n", pct, substr(desc, 1, 55)
-            fflush()
+            if (pct != last_pct || pm_count++ % 10 == 0) {
+                printf "XXX\n%d\n[Upgrading] %s\nXXX\n", pct, substr(desc, 1, 55)
+                fflush()
+                last_pct = pct
+            }
         }'
     ) | whiptail --title "$title" --gauge "Resolving dependencies (This may take several minutes)..." 10 75 0
 }
 EOF
- 
- 
 
 # 4. Deploy the First-Boot Setup Script
 echo "[*] Deploying /usr/local/bin/firstboot-setup.sh..."
