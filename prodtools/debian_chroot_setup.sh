@@ -121,25 +121,25 @@ install_with_progress() {
 
     (
         export DEBIAN_FRONTEND=noninteractive
-        # We pass "${args[@]}" directly into apt-get so it natively handles -t or any other flags
         apt-get install -y -o APT::Status-Fd=3 "${args[@]}" 3>&1 1>/dev/null 2>&1 | \
         awk -F: '/^dlstatus:/ {
-            # Scale downloads to take up 0% to 20% of the bar
-            pct = int($3 * 0.20)
+            # Scale downloads to take up 0% to 50% of the bar (feels much faster)
+            pct = int($3 * 0.50)
             desc = $4
             for (i=5; i<=NF; i++) { desc = desc ":" $i }
-            printf "XXX\n%d\nDownloading: %s\nXXX\n", pct, desc
+            # Truncate to 55 chars to prevent Whiptail word-wrap breakage
+            printf "XXX\n%d\n[Downloading] %s\nXXX\n", pct, substr(desc, 1, 55)
             fflush()
         }
         /^pmstatus:/ {
-            # Scale installations to take up 20% to 100% of the bar
-            pct = 20 + int($3 * 0.80)
+            # Scale installations to take up 50% to 100% of the bar
+            pct = 50 + int($3 * 0.50)
             desc = $4
             for (i=5; i<=NF; i++) { desc = desc ":" $i }
-            printf "XXX\n%d\nInstalling: %s\nXXX\n", pct, desc
+            printf "XXX\n%d\n[Installing] %s\nXXX\n", pct, substr(desc, 1, 55)
             fflush()
         }'
-    ) | whiptail --title "$title" --gauge "Initializing installation..." 10 60 0
+    ) | whiptail --title "$title" --gauge "Resolving dependencies (This may take several minutes)..." 10 75 0
 }
 
 update_with_progress() {
@@ -151,10 +151,10 @@ update_with_progress() {
             pct = int($3)
             desc = $4
             for (i=5; i<=NF; i++) { desc = desc ":" $i }
-            printf "XXX\n%d\n%s\nXXX\n", pct, desc
+            printf "XXX\n%d\n%s\nXXX\n", pct, substr(desc, 1, 65)
             fflush()
         }'
-    ) | whiptail --title "$title" --gauge "Connecting to repositories..." 10 60 0
+    ) | whiptail --title "$title" --gauge "Connecting to repositories..." 10 75 0
 }
 
 upgrade_with_progress() {
@@ -162,28 +162,28 @@ upgrade_with_progress() {
     
     (
         export DEBIAN_FRONTEND=noninteractive
-        # We pass standard upgrade flags to automatically keep old configs and prevent prompts
         apt-get upgrade -y \
             -o Dpkg::Options::="--force-confdef" \
             -o Dpkg::Options::="--force-confold" \
             -o APT::Status-Fd=3 3>&1 1>/dev/null 2>&1 | \
         awk -F: '/^dlstatus:/ {
-            pct = int($3 * 0.20)
+            pct = int($3 * 0.50)
             desc = $4
             for (i=5; i<=NF; i++) { desc = desc ":" $i }
-            printf "XXX\n%d\nDownloading: %s\nXXX\n", pct, desc
+            printf "XXX\n%d\n[Downloading] %s\nXXX\n", pct, substr(desc, 1, 55)
             fflush()
         }
         /^pmstatus:/ {
-            pct = 20 + int($3 * 0.80)
+            pct = 50 + int($3 * 0.50)
             desc = $4
             for (i=5; i<=NF; i++) { desc = desc ":" $i }
-            printf "XXX\n%d\nUpgrading: %s\nXXX\n", pct, desc
+            printf "XXX\n%d\n[Upgrading] %s\nXXX\n", pct, substr(desc, 1, 55)
             fflush()
         }'
-    ) | whiptail --title "$title" --gauge "Preparing upgrade..." 10 60 0
+    ) | whiptail --title "$title" --gauge "Resolving dependencies (This may take several minutes)..." 10 75 0
 }
 EOF
+ 
  
 
 # 4. Deploy the First-Boot Setup Script
