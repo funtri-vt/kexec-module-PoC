@@ -177,33 +177,28 @@ echo "Updating package databases..."
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
 
+# Prevent services (like sddm/gdm3) from starting during installation and freezing the TTY
+echo -e '#!/bin/sh\nexit 101' > /usr/sbin/policy-rc.d
+chmod +x /usr/sbin/policy-rc.d
+
 case $CHOICE in
     1) apt-get install -y task-gnome-desktop ;;
     2) apt-get install -y task-kde-desktop ;;
     3) apt-get install -y task-xfce-desktop ;;
-    4|*) echo "Skipping DE installation." ;; # Catch-all for CLI or if user pressed Cancel
+    4|*) echo "Skipping DE installation." ;;
 esac
 
-# --- Phase 4.5: Kernel Upgrade (Backports) ---
-echo "Configuring backports repository for kernel upgrade..."
-
-# Safely append the backports repo
-echo "deb http://deb.debian.org/debian trixie-backports main" > /etc/apt/sources.list.d/backports.list
-
-echo "Updating package databases..."
-apt-get update -y
-
-echo "Upgrading kernel and headers from backports..."
-apt-get install -t trixie-backports -y linux-image-amd64 linux-headers-amd64
-
-# Ensure the initramfs is updated with the new kernel and our forced AMD firmware
-update-initramfs -u -k all
+# Remove the block so services can start normally on the next boot
+rm -f /usr/sbin/policy-rc.d
 
 # --- Phase 5: Teardown & Handoff ---
-echo "Setup complete! Disabling first-boot script..."
+echo "Phase 1 complete! Disabling first-boot script..."
 systemctl disable firstboot-setup.service
 
-whiptail --title "Complete" --msgbox "Installation finished. Press OK to reboot." 8 45
+echo "Arming Phase 2 kernel upgrade..."
+systemctl enable secondboot-setup.service
+
+whiptail --title "Phase 1 Complete" --msgbox "Desktop installation finished.\n\nThe system will now reboot to finalize the kernel upgrade." 10 50
 
 reboot
 EOF
@@ -238,6 +233,71 @@ echo "[*] Arming the first-boot service..."
 systemctl enable firstboot-setup.service
 
 echo "[*] Installing Blind Log Dumper service..."
+
+# 7. Deploy the Second-Boot Kernel Setup Script
+echo "[*] Deploying /usr/local/bin/secondboot-setup.sh..."
+cat << 'EOF' > /usr/local/bin/secondboot-setup.sh
+#!/bin/bash
+
+# Redirect I/O directly to tty1
+exec < /dev/tty1 > /dev/tty1 2>&1
+
+echo "=========================================================="
+echo " ExecBoot: Phase 2 - Kernel Configuration"
+echo "=========================================================="
+
+echo "Waiting for network connection to establish..."
+while ! ping -c 1 -W 3 deb.debian.org &> /dev/null; do
+    sleep 2
+done
+echo "Network connected!"
+
+export DEBIAN_FRONTEND=noninteractive
+
+echo "Configuring backports repository for kernel upgrade..."
+echo "deb http://deb.debian.org/debian trixie-backports main" > /etc/apt/sources.list.d/backports.list
+
+echo "Updating package databases..."
+apt-get update -y
+
+echo "Upgrading kernel and headers from backports..."
+apt-get install -t trixie-backports -y linux-image-amd64 linux-headers-amd64
+
+echo "Updating initramfs..."
+update-initramfs -u -k all
+
+echo "Setup fully complete! Disabling second-boot service..."
+systemctl disable secondboot-setup.service
+
+whiptail --title "Complete" --msgbox "System setup is fully complete! Press OK to reboot into your new desktop environment." 8 50
+
+reboot
+EOF
+
+chmod +x /usr/local/bin/secondboot-setup.sh
+
+# 8. Deploy the Second-Boot Systemd Service
+echo "[*] Deploying /etc/systemd/system/secondboot-setup.service..."
+cat << 'EOF' > /etc/systemd/system/secondboot-setup.service
+[Unit]
+Description=Second Boot TUI Setup Script (Kernel Upgrade)
+After=network.target NetworkManager.service systemd-user-sessions.service
+Before=getty@tty1.service display-manager.service sddm.service gdm3.service lightdm.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/secondboot-setup.sh
+StandardInput=tty-force
+StandardOutput=inherit
+StandardError=inherit
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TimeoutSec=0
+
+[Install]
+WantedBy=multi-user.target
+EOF
 
 # 1. Create the dump script
 cat << 'EOF' > /usr/local/bin/dump-logs.sh
