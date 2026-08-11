@@ -35,7 +35,7 @@ apt-get update
 
 # Install kernel, initramfs tools, networking tools, and utilities
 apt-get install -y \
-    whiptail \
+    dialog \
     network-manager \
     wpasupplicant \
     cloud-guest-utils \
@@ -111,8 +111,69 @@ echo "PARTLABEL=execboot_rootfs:debian  /  ext4  errors=remount-ro  0  1" > /etc
 # 3. Set a default hostname
 echo "debian-execboot" > /etc/hostname
 
+# ==========================================
+# DIALOG UI THEME CHEAT SHEET FOR FUTURE REFERENCE
+# Syntax: parameter = (FOREGROUND, BACKGROUND, HIGHLIGHT)
+# ==========================================
+#
+# 1. FOREGROUND: The color of the text or the border line itself.
+# 2. BACKGROUND: The color of the space immediately behind the text/border.
+# 3. HIGHLIGHT:  Accepts 'ON' or 'OFF'. 
+#                - ON turns on the "bright" or "bold" ANSI attribute.
+#                - OFF leaves the color flat/standard.
+#
+# AVAILABLE COLORS:
+# BLACK, RED, GREEN, YELLOW, BLUE, MAGENTA, CYAN, WHITE
+#
+# EXAMPLES:
+# screen_color = (CYAN,BLUE,ON)
+#   - Text/Patterns: Bright Cyan (Because HIGHLIGHT is ON)
+#   - Background: Standard Blue
+#   - Result: The void behind the dialog boxes will be blue, covered in bright cyan drop-shadows or patterns.
+#
+# dialog_color = (BLACK,WHITE,OFF)
+#   - Text: Standard Black (Because HIGHLIGHT is OFF)
+#   - Background: Standard White
+#   - Result: The main box will look like black text on a flat white piece of paper.
+# ==========================================
+
+# 3.5 Deploy Global UI Theme for Dialog
+echo "[*] Creating global dialog theme..."
+cat << 'EOF' > /etc/execboot-theme.rc
+# ==========================================
+# ExecBoot Dialog UI Theme
+# Colors: BLACK, RED, GREEN, YELLOW, BLUE, MAGENTA, CYAN, WHITE
+# Format: (foreground, background, highlight)
+# ==========================================
+
+# Enable custom colors
+use_colors = ON
+
+# Screen background (The void behind the dialog boxes)
+screen_color = (CYAN,BLUE,ON)
+
+# The dialog box background and standard text
+dialog_color = (BLACK,WHITE,OFF)
+
+# The title text at the top of the box
+title_color = (BLUE,WHITE,ON)
+
+# The border of the dialog box
+border_color = (WHITE,WHITE,ON)
+
+# Buttons (OK, Cancel, Yes, No)
+button_active_color = (WHITE,BLUE,ON)
+button_inactive_color = (BLACK,WHITE,OFF)
+
+# Progress bar / Gauge colors
+gauge_color = (WHITE,BLUE,ON)
+EOF
+
 cat << 'EOF' > /usr/local/bin/install_helper_funcs.sh
 #!/bin/bash
+
+# Apply the global UI theme to all dialog commands(fine to put here as this is included by both scripts)
+export DIALOGRC="/etc/execboot-theme.rc"
 
 install_with_progress() {
     local title="$1"
@@ -121,7 +182,7 @@ install_with_progress() {
 
     (
         export DEBIAN_FRONTEND=noninteractive
-        apt-get install -y -o APT::Status-Fd=3 "${args[@]}" 3>&1 1>/dev/null 2>&1 | \
+        apt-get install -y -o APT::Status-Fd=3 "${args[@]}" 3>&1 1>/dev/tty3 2>&1 | \
         awk -F: '
         BEGIN { last_time = systime() }
         
@@ -152,13 +213,13 @@ install_with_progress() {
                 last_time = now
             }
         }'
-    ) | whiptail --title "$title" --gauge "Resolving dependencies (This may take several minutes)..." 10 75 0
+    ) | dialog --title "$title" --gauge "Resolving dependencies (This may take several minutes)..." 10 75 0
 }
 
 update_with_progress() {
     local title="${1:-Updating Package Lists}"
     (
-        apt-get update -y -o APT::Status-Fd=3 3>&1 1>/dev/null 2>&1 | \
+        apt-get update -y -o APT::Status-Fd=3 3>&1 1>/dev/tty3 2>&1 | \
         awk -F: '
         BEGIN { last_time = systime() }
         
@@ -187,14 +248,14 @@ update_with_progress() {
                 last_time = now
             }
         }'
-    ) | whiptail --title "$title" --gauge "Connecting to repositories..." 10 75 0
+    ) | dialog --title "$title" --gauge "Connecting to repositories..." 10 75 0
 }
 
 upgrade_with_progress() {
     local title="${1:-Upgrading System Packages}"
     (
         export DEBIAN_FRONTEND=noninteractive
-        apt-get upgrade -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" -o APT::Status-Fd=3 3>&1 1>/dev/null 2>&1 | \
+        apt-get upgrade -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" -o APT::Status-Fd=3 3>&1 1>/dev/tty3 2>&1 | \
         awk -F: '
         BEGIN { last_time = systime() }
         
@@ -223,7 +284,7 @@ upgrade_with_progress() {
                 last_time = now
             }
         }'
-    ) | whiptail --title "$title" --gauge "Resolving dependencies (This may take several minutes)..." 10 75 0
+    ) | dialog --title "$title" --gauge "Resolving dependencies (This may take several minutes)..." 10 75 0
 }
 EOF
 
@@ -264,10 +325,10 @@ fi
 # --- Phase 2: Network Initialization ---
 # FIX: Changed 'then' to 'do'
 while ! ping -c 1 -W 3 deb.debian.org &> /dev/null; do
-    if whiptail --title "Network Required" --yesno "No internet connection detected.\n\nDo you need to configure Wi-Fi?" 10 50; then
+    if dialog --title "Network Required" --yesno "No internet connection detected.\n\nDo you need to configure Wi-Fi?" 10 50; then
         nmtui-connect
     else
-        whiptail --title "Error" --msgbox "Installation cannot proceed without internet. The system will now reboot." 8 45
+        dialog --title "Error" --msgbox "Installation cannot proceed without internet. The system will now reboot." 8 45
         reboot
         exit 1
     fi
@@ -276,18 +337,18 @@ done
 # --- Phase 3: User Account Provisioning ---
 NEW_USER=""
 while [ -z "$NEW_USER" ]; do
-    NEW_USER=$(whiptail --title "User Creation" --inputbox "Enter a new username (lowercase only):" 10 40 3>&1 1>&2 2>&3)
+    NEW_USER=$(dialog --title "User Creation" --inputbox "Enter a new username (lowercase only):" 10 40 3>&1 1>&2 2>&3)
 done
 
 PASSWORD=""
 PASSWORD_CONFIRM="x"
 # FIX: Ensure password is not empty and that both entries match
 while [ -z "$PASSWORD" ] || [ "$PASSWORD" != "$PASSWORD_CONFIRM" ]; do
-    PASSWORD=$(whiptail --title "User Creation" --passwordbox "Enter password for $NEW_USER:" 10 40 3>&1 1>&2 2>&3)
-    PASSWORD_CONFIRM=$(whiptail --title "User Creation" --passwordbox "Confirm password:" 10 40 3>&1 1>&2 2>&3)
+    PASSWORD=$(dialog --title "User Creation" --passwordbox "Enter password for $NEW_USER:" 10 40 3>&1 1>&2 2>&3)
+    PASSWORD_CONFIRM=$(dialog --title "User Creation" --passwordbox "Confirm password:" 10 40 3>&1 1>&2 2>&3)
 
     if [ "$PASSWORD" != "$PASSWORD_CONFIRM" ]; then
-        whiptail --title "Error" --msgbox "Passwords do not match. Please try again." 8 40
+        dialog --title "Error" --msgbox "Passwords do not match. Please try again." 8 40
     fi
 done
 
@@ -295,10 +356,10 @@ echo "Creating user $NEW_USER..."
 useradd -m -s /bin/bash -G sudo "$NEW_USER"
 echo "$NEW_USER:$PASSWORD" | chpasswd
 
-whiptail --title "Success" --msgbox "User $NEW_USER created successfully and added to the sudo group." 8 45
+dialog --title "Success" --msgbox "User $NEW_USER created successfully and added to the sudo group." 8 45
 
 # --- Phase 4: Payload Selection ---
-CHOICE=$(whiptail --title "System Setup" --menu "Internet Connected!\n\nChoose a Desktop Environment to install:" 15 50 4 \
+CHOICE=$(dialog --title "System Setup" --menu "Internet Connected!\n\nChoose a Desktop Environment to install:" 15 50 4 \
 "1" "GNOME Desktop" \
 "2" "KDE Plasma" \
 "3" "XFCE Minimal" \
@@ -329,7 +390,7 @@ systemctl disable firstboot-setup.service
 echo "Arming Phase 2 kernel upgrade..."
 systemctl enable secondboot-setup.service
 
-whiptail --title "Phase 1 Complete" --msgbox "Desktop installation finished.\n\nThe system will now reboot to finalize the kernel upgrade." 10 50
+dialog --title "Phase 1 Complete" --msgbox "Desktop installation finished.\n\nThe system will now reboot to finalize the kernel upgrade." 10 50
 
 reboot
 EOF
@@ -408,7 +469,7 @@ rm -f /usr/sbin/policy-rc.d
 echo "Setup fully complete! Disabling second-boot service..."
 systemctl disable secondboot-setup.service
 
-whiptail --title "Complete" --msgbox "System setup is fully complete! Press OK to reboot into your new desktop environment." 8 50
+dialog --title "Complete" --msgbox "System setup is fully complete! Press OK to reboot into your new desktop environment." 8 50
 
 reboot
 EOF
