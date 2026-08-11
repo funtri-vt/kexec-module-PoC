@@ -123,13 +123,20 @@ install_with_progress() {
         export DEBIAN_FRONTEND=noninteractive
         # We pass "${args[@]}" directly into apt-get so it natively handles -t or any other flags
         apt-get install -y -o APT::Status-Fd=3 "${args[@]}" 3>&1 1>/dev/null 2>&1 | \
-        awk -F: '/^(pmstatus|dlstatus):/ {
-            pct = int($3)
+        awk -F: '/^dlstatus:/ {
+            # Scale downloads to take up 0% to 20% of the bar
+            pct = int($3 * 0.20)
             desc = $4
-            for (i=5; i<=NF; i++) {
-                desc = desc ":" $i
-            }
-            printf "XXX\n%s\nXXX\n%d\n", desc, pct
+            for (i=5; i<=NF; i++) { desc = desc ":" $i }
+            printf "XXX\n%d\nDownloading: %s\nXXX\n", pct, desc
+            fflush()
+        }
+        /^pmstatus:/ {
+            # Scale installations to take up 20% to 100% of the bar
+            pct = 20 + int($3 * 0.80)
+            desc = $4
+            for (i=5; i<=NF; i++) { desc = desc ":" $i }
+            printf "XXX\n%d\nInstalling: %s\nXXX\n", pct, desc
             fflush()
         }'
     ) | whiptail --title "$title" --gauge "Initializing installation..." 10 60 0
@@ -143,10 +150,8 @@ update_with_progress() {
         awk -F: '/^dlstatus:/ {
             pct = int($3)
             desc = $4
-            for (i=5; i<=NF; i++) {
-                desc = desc ":" $i
-            }
-            printf "XXX\n%s\nXXX\n%d\n", desc, pct
+            for (i=5; i<=NF; i++) { desc = desc ":" $i }
+            printf "XXX\n%d\n%s\nXXX\n", pct, desc
             fflush()
         }'
     ) | whiptail --title "$title" --gauge "Connecting to repositories..." 10 60 0
@@ -162,18 +167,24 @@ upgrade_with_progress() {
             -o Dpkg::Options::="--force-confdef" \
             -o Dpkg::Options::="--force-confold" \
             -o APT::Status-Fd=3 3>&1 1>/dev/null 2>&1 | \
-        awk -F: '/^(pmstatus|dlstatus):/ {
-            pct = int($3)
+        awk -F: '/^dlstatus:/ {
+            pct = int($3 * 0.20)
             desc = $4
-            for (i=5; i<=NF; i++) {
-                desc = desc ":" $i
-            }
-            printf "XXX\n%s\nXXX\n%d\n", desc, pct
+            for (i=5; i<=NF; i++) { desc = desc ":" $i }
+            printf "XXX\n%d\nDownloading: %s\nXXX\n", pct, desc
+            fflush()
+        }
+        /^pmstatus:/ {
+            pct = 20 + int($3 * 0.80)
+            desc = $4
+            for (i=5; i<=NF; i++) { desc = desc ":" $i }
+            printf "XXX\n%d\nUpgrading: %s\nXXX\n", pct, desc
             fflush()
         }'
     ) | whiptail --title "$title" --gauge "Preparing upgrade..." 10 60 0
 }
 EOF
+ 
 
 # 4. Deploy the First-Boot Setup Script
 echo "[*] Deploying /usr/local/bin/firstboot-setup.sh..."
