@@ -9,8 +9,8 @@ echo "=========================================================="
 echo " Executing Debian Chroot Configuration for board $BOARD_ID..."
 echo "=========================================================="
 
-# 0. Enable non-free firmware repositories
-echo "[*] Configuring apt sources for non-free-firmware..."
+# 0. Enable non-free firmware repositories (using HTTP temporarily for bootstrapping)
+echo "[*] Configuring temporary HTTP apt sources for bootstrapping..."
 cat << 'EOF' > /etc/apt/sources.list
 deb http://deb.debian.org/debian/ trixie main contrib non-free non-free-firmware
 deb-src http://deb.debian.org/debian/ trixie main contrib non-free non-free-firmware
@@ -19,6 +19,18 @@ EOF
 # 1. Update and install core dependencies
 echo "[*] Updating apt and installing core dependencies..."
 export DEBIAN_FRONTEND=noninteractive
+apt-get install -y ca-certificates
+# 1.5 Switch all repositories to HTTPS now that certificates are available
+echo "[*] Switching all repositories to HTTPS for maximum security..."
+cat << 'EOF' > /etc/apt/sources.list
+deb https://deb.debian.org/debian/ trixie main contrib non-free non-free-firmware
+deb-src https://deb.debian.org/debian/ trixie main contrib non-free non-free-firmware
+
+deb https://security.debian.org/debian-security trixie-security main contrib non-free non-free-firmware
+deb-src https://security.debian.org/debian-security trixie-security main contrib non-free non-free-firmware
+EOF
+
+# Refresh package lists using the secure HTTPS connection
 apt-get update
 
 # Install kernel, initramfs tools, networking tools, and utilities
@@ -99,10 +111,76 @@ echo "PARTLABEL=execboot_rootfs:debian  /  ext4  errors=remount-ro  0  1" > /etc
 # 3. Set a default hostname
 echo "debian-execboot" > /etc/hostname
 
+cat << 'EOF' > /usr/local/bin/install_helper_funcs.sh
+#!/bin/bash
+# Helper function to install packages with a dynamic Whiptail progress bar
+install_with_progress() {
+    local title="$1"
+    shift
+    local args=("$@")
+
+    (
+        export DEBIAN_FRONTEND=noninteractive
+        # We pass "${args[@]}" directly into apt-get so it natively handles -t or any other flags
+        apt-get install -y -o APT::Status-Fd=3 "${args[@]}" 3>&1 1>/dev/null 2>&1 | \
+        awk -F: '/^(pmstatus|dlstatus):/ {
+            pct = int($3)
+            desc = $4
+            for (i=5; i<=NF; i++) {
+                desc = desc ":" $i
+            }
+            printf "XXX\n%s\nXXX\n%d\n", desc, pct
+            fflush()
+        }'
+    ) | whiptail --title "$title" --gauge "Initializing installation..." 10 60 0
+}
+
+update_with_progress() {
+    local title="${1:-Updating Package Lists}"
+    
+    (
+        apt-get update -y -o APT::Status-Fd=3 3>&1 1>/dev/null 2>&1 | \
+        awk -F: '/^dlstatus:/ {
+            pct = int($3)
+            desc = $4
+            for (i=5; i<=NF; i++) {
+                desc = desc ":" $i
+            }
+            printf "XXX\n%s\nXXX\n%d\n", desc, pct
+            fflush()
+        }'
+    ) | whiptail --title "$title" --gauge "Connecting to repositories..." 10 60 0
+}
+
+upgrade_with_progress() {
+    local title="${1:-Upgrading System Packages}"
+    
+    (
+        export DEBIAN_FRONTEND=noninteractive
+        # We pass standard upgrade flags to automatically keep old configs and prevent prompts
+        apt-get upgrade -y \
+            -o Dpkg::Options::="--force-confdef" \
+            -o Dpkg::Options::="--force-confold" \
+            -o APT::Status-Fd=3 3>&1 1>/dev/null 2>&1 | \
+        awk -F: '/^(pmstatus|dlstatus):/ {
+            pct = int($3)
+            desc = $4
+            for (i=5; i<=NF; i++) {
+                desc = desc ":" $i
+            }
+            printf "XXX\n%s\nXXX\n%d\n", desc, pct
+            fflush()
+        }'
+    ) | whiptail --title "$title" --gauge "Preparing upgrade..." 10 60 0
+}
+EOF
+
 # 4. Deploy the First-Boot Setup Script
 echo "[*] Deploying /usr/local/bin/firstboot-setup.sh..."
 cat << 'EOF' > /usr/local/bin/firstboot-setup.sh
 #!/bin/bash
+
+source /usr/local/bin/install_helper_funcs.sh
 
 # Redirect I/O directly to tty1 for UI rendering
 exec < /dev/tty1 > /dev/tty1 2>&1
@@ -175,16 +253,16 @@ CHOICE=$(whiptail --title "System Setup" --menu "Internet Connected!\n\nChoose a
 
 echo "Updating package databases..."
 export DEBIAN_FRONTEND=noninteractive
-apt-get update -y
+update_with_progress
 
 # Prevent services (like sddm/gdm3) from starting during installation and freezing the TTY
 echo -e '#!/bin/sh\nexit 101' > /usr/sbin/policy-rc.d
 chmod +x /usr/sbin/policy-rc.d
 
 case $CHOICE in
-    1) apt-get install -y task-gnome-desktop ;;
-    2) apt-get install -y task-kde-desktop ;;
-    3) apt-get install -y task-xfce-desktop ;;
+    1) install_with_progress "Installing GNOME Desktop..." task-gnome-desktop ;;
+    2) install_with_progress "Installing KDE Plasma..." task-kde-desktop ;;
+    3) install_with_progress "Installing XFCE Minimal..." task-xfce-desktop ;;
     4|*) echo "Skipping DE installation." ;;
 esac
 
@@ -239,6 +317,8 @@ echo "[*] Deploying /usr/local/bin/secondboot-setup.sh..."
 cat << 'EOF' > /usr/local/bin/secondboot-setup.sh
 #!/bin/bash
 
+source /usr/local/bin/install_helper_funcs.sh
+
 # Redirect I/O directly to tty1
 exec < /dev/tty1 > /dev/tty1 2>&1
 
@@ -255,16 +335,22 @@ echo "Network connected!"
 export DEBIAN_FRONTEND=noninteractive
 
 echo "Configuring backports repository for kernel upgrade..."
-echo "deb http://deb.debian.org/debian trixie-backports main" > /etc/apt/sources.list.d/backports.list
+echo "deb https://deb.debian.org/debian trixie-backports main contrib non-free non-free-firmware" > /etc/apt/sources.list.d/backports.list
 
 echo "Updating package databases..."
-apt-get update -y
+update_with_progress
+
+# Temporarily block services from starting during Phase 2 upgrades to protect tty1
+echo -e '#!/bin/sh\nexit 101' > /usr/sbin/policy-rc.d
+chmod +x /usr/sbin/policy-rc.d
 
 echo "Upgrading kernel and headers from backports..."
-apt-get install -t trixie-backports -y linux-image-amd64 linux-headers-amd64
+install_with_progress "Upgrading Kernel to Backports Version" -t trixie-backports linux-image-amd64 linux-headers-amd64
 
-echo "Updating initramfs..."
-update-initramfs -u -k all
+echo "Upgrading system..."
+upgrade_with_progress
+
+rm -f /usr/sbin/policy-rc.d
 
 echo "Setup fully complete! Disabling second-boot service..."
 systemctl disable secondboot-setup.service
