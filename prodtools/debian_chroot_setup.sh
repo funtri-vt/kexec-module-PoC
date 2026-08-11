@@ -184,7 +184,7 @@ install_with_progress() {
         export DEBIAN_FRONTEND=noninteractive
         apt-get install -y -o APT::Status-Fd=3 "${args[@]}" 3>&1 1>/dev/tty3 2>&1 | \
         awk -F: '
-        BEGIN { last_time = systime() }
+        BEGIN { msg_count = 0; last_pct = -1 }
         
         /^dlstatus:/ {
             pct = int($3 * 0.50)
@@ -192,12 +192,11 @@ install_with_progress() {
             for (i=5; i<=NF; i++) { desc = desc ":" $i }
             sub(/ \([^\)]+ remaining\)/, "", desc)
             
-            now = systime()
-            # STRICT DEBOUNCE: Only update once per second, OR if we hit exactly 50% (end of download phase)
-            if (now - last_time >= 1 || pct == 50) {
+            # MAWK DEBOUNCE: Update on % change, every 15th line, or at exactly 50%
+            if (pct != last_pct || msg_count++ % 15 == 0 || pct == 50) {
                 printf "XXX\n%d\n[Downloading] %s\nXXX\n", pct, substr(desc, 1, 55)
                 fflush()
-                last_time = now
+                last_pct = pct
             }
         }
         /^pmstatus:/ {
@@ -205,12 +204,11 @@ install_with_progress() {
             desc = $4
             for (i=5; i<=NF; i++) { desc = desc ":" $i }
             
-            now = systime()
-            # STRICT DEBOUNCE: Only update once per second, OR if we hit exactly 100%
-            if (now - last_time >= 1 || pct == 100) {
+            # MAWK DEBOUNCE: Update on % change, every 15th line, or at exactly 100%
+            if (pct != last_pct || msg_count++ % 15 == 0 || pct == 100) {
                 printf "XXX\n%d\n[Installing] %s\nXXX\n", pct, substr(desc, 1, 55)
                 fflush()
-                last_time = now
+                last_pct = pct
             }
         }'
     ) | dialog --title "$title" --gauge "Resolving dependencies (This may take several minutes)..." 10 75 0
@@ -221,7 +219,7 @@ update_with_progress() {
     (
         apt-get update -y -o APT::Status-Fd=3 3>&1 1>/dev/tty3 2>&1 | \
         awk -F: '
-        BEGIN { last_time = systime() }
+        BEGIN { msg_count = 0; last_pct = -1 }
         
         /^dlstatus:/ {
             pct = int($3 * 0.50)
@@ -229,11 +227,10 @@ update_with_progress() {
             for (i=5; i<=NF; i++) { desc = desc ":" $i }
             sub(/ \([^\)]+ remaining\)/, "", desc)
             
-            now = systime()
-            if (now - last_time >= 1 || pct == 50) {
+            if (pct != last_pct || msg_count++ % 15 == 0 || pct == 50) {
                 printf "XXX\n%d\n[Downloading] %s\nXXX\n", pct, substr(desc, 1, 55)
                 fflush()
-                last_time = now
+                last_pct = pct
             }
         }
         /^pmstatus:/ {
@@ -241,11 +238,10 @@ update_with_progress() {
             desc = $4
             for (i=5; i<=NF; i++) { desc = desc ":" $i }
             
-            now = systime()
-            if (now - last_time >= 1 || pct == 100) {
+            if (pct != last_pct || msg_count++ % 15 == 0 || pct == 100) {
                 printf "XXX\n%d\n[Installing] %s\nXXX\n", pct, substr(desc, 1, 55)
                 fflush()
-                last_time = now
+                last_pct = pct
             }
         }'
     ) | dialog --title "$title" --gauge "Connecting to repositories..." 10 75 0
@@ -257,7 +253,7 @@ upgrade_with_progress() {
         export DEBIAN_FRONTEND=noninteractive
         apt-get upgrade -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" -o APT::Status-Fd=3 3>&1 1>/dev/tty3 2>&1 | \
         awk -F: '
-        BEGIN { last_time = systime() }
+        BEGIN { msg_count = 0; last_pct = -1 }
         
         /^dlstatus:/ {
             pct = int($3 * 0.50)
@@ -265,11 +261,10 @@ upgrade_with_progress() {
             for (i=5; i<=NF; i++) { desc = desc ":" $i }
             sub(/ \([^\)]+ remaining\)/, "", desc)
             
-            now = systime()
-            if (now - last_time >= 1 || pct == 50) {
+            if (pct != last_pct || msg_count++ % 15 == 0 || pct == 50) {
                 printf "XXX\n%d\n[Downloading] %s\nXXX\n", pct, substr(desc, 1, 55)
                 fflush()
-                last_time = now
+                last_pct = pct
             }
         }
         /^pmstatus:/ {
@@ -277,11 +272,10 @@ upgrade_with_progress() {
             desc = $4
             for (i=5; i<=NF; i++) { desc = desc ":" $i }
             
-            now = systime()
-            if (now - last_time >= 1 || pct == 100) {
+            if (pct != last_pct || msg_count++ % 15 == 0 || pct == 100) {
                 printf "XXX\n%d\n[Installing] %s\nXXX\n", pct, substr(desc, 1, 55)
                 fflush()
-                last_time = now
+                last_pct = pct
             }
         }'
     ) | dialog --title "$title" --gauge "Resolving dependencies (This may take several minutes)..." 10 75 0
