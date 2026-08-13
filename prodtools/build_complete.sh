@@ -181,6 +181,25 @@ else
     ./scripts/config --enable CONFIG_USB_XHCI_HCD
     ./scripts/config --enable CONFIG_KEYBOARD_CROS_EC
     
+    # 1. Enable Core MMC and Block support
+    ./scripts/config --enable CONFIG_MMC
+    ./scripts/config --enable CONFIG_MMC_BLOCK
+    ./scripts/config --set-val CONFIG_MMC_BLOCK_MINORS 8
+
+    # 2. Enable SDHCI Host Controller Drivers
+    ./scripts/config --enable CONFIG_MMC_SDHCI
+    ./scripts/config --enable CONFIG_MMC_SDHCI_PLTFM
+    ./scripts/config --enable CONFIG_MMC_SDHCI_PCI
+    ./scripts/config --enable CONFIG_MMC_SDHCI_ACPI
+
+    # 3. Enable File System and Partition Support
+    ./scripts/config --enable CONFIG_EXT4_FS
+    ./scripts/config --enable CONFIG_MSDOS_PARTITION
+    ./scripts/config --enable CONFIG_EFI_PARTITION
+
+    # 4. Enable Command Queueing
+    ./scripts/config --enable CONFIG_MMC_CQHCI
+
     make olddefconfig
     make -j"$CORES" bzImage
 fi
