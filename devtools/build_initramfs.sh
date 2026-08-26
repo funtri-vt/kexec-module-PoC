@@ -185,17 +185,7 @@ echo "[AUTOMATON] Relaying detected board id from $BOARD_ID_SRC : $BOARD_ID"
 EXTRA_BOOT_ARGS=""
 
 if [ "$BOARD_ID" = "grunt" ]; then # this might be useful later, but make sure to set them up individually?: || [ "$BOARD_ID" = "zork" ] || [ "$BOARD_ID" = "treeya" ]
-    # --- PHASE 1: GPU BRAIN-WIPE ---
-    echo "[AUTOMATON] Forcing GPU PCI Reset to clear dirty RMA state for $BOARD_ID..."
-    if [ -d /sys/bus/pci/devices/0000:00:01.0 ]; then
-        echo "0000:00:01.0" > /sys/bus/pci/drivers/amdgpu/unbind 2>/dev/null || true
-        echo 1 > /sys/bus/pci/devices/0000:00:01.0/reset 2>/dev/null || true
-        echo "[AUTOMATON] GPU reset pulse sent!"
-    else
-        echo "[AUTOMATON] Warning: GPU 0000:00:01.0 not found!"
-    fi
-
-    # Phase 2: construct boot args to make apuart console work for AMD boards
+    # construct boot args to make apuart console work for AMD boards
     EXTRA_BOOT_ARGS="earlycon=uart8250,mmio32,0xfedc6000,4430n8 console=uart,mmio32,0xfedc6000,4430n8 ignore_loglevel board_id=$BOARD_ID panic=10 pm_async=0"
 fi
 
@@ -203,6 +193,10 @@ fi
 /sbin/kexec -l /payload/bzImage \
     --initrd=/payload/initramfs.cpio.gz \
     --command-line="root=/dev/ram0 rw debug loglevel=8 reset_devices amdgpu.sg_display=0 amdgpu.runpm=0 amdgpu.aspm=0 amdgpu.dc=0 amdgpu.dpm=0 amdgpu.bapm=0 amdgpu.audio=0 video=efifb:off video=vesafb:off video=simplefb:off sysfb_disable=1 drm.debug=0x1e $EXTRA_BOOT_ARGS"
+
+echo "[AUTOMATON] Cleanly unbinding framebuffers before kexec jump..."
+echo "efi-framebuffer.0" > /sys/bus/platform/drivers/efi-framebuffer/unbind 2>/dev/null || true
+echo "simple-framebuffer.0" > /sys/bus/platform/drivers/simple-framebuffer/unbind 2>/dev/null || true
 
 # Execute the native handoff (this properly shuts down the UART!)
 echo "[AUTOMATON] Executing native kexec jump NOW."

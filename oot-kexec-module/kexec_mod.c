@@ -1,22 +1,30 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 //     kexec_mod.c: performs an in memory kexec through a misc device for kernels that don't support it
 //     Copyright (C) 2026  funtri-vt (funtri.vt@gmail.com)
 
-//     This program is free software: you can redistribute it and/or modify
-//     it under the terms of the GNU General Public License as published by
-//     the Free Software Foundation, either version 3 of the License, or
-//     (at your option) any later version.
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; either version 2 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program; if not, write to the Free Software Foundation, Inc.,
+// 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
-//     This program is distributed in the hope that it will be useful,
-//     but WITHOUT ANY WARRANTY; without even the implied warranty of
-//     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-//     GNU General Public License for more details.
+/* Auto-generated board configuration header */
+#include "board_config.h"
 
-//     You should have received a copy of the GNU General Public License
-//     along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
+//linux includes
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
+#include <linux/io.h>
 #include <linux/fs.h>
 #include <linux/uaccess.h>
 #include <linux/miscdevice.h>
@@ -26,12 +34,76 @@
 #include <linux/kallsyms.h>
 #include <linux/screen_info.h>
 #include <linux/delay.h>
+#include <linux/pci.h>
+#include <linux/pm_runtime.h>
+
+//asm includes
 #include <asm/io.h>
 #include <asm/pgtable.h>
 #include <asm/set_memory.h>
 
 /* Use the relative path as specified by the synchronized directory layout */
 #include "../kexec_ioctl.h"
+
+//driver includes
+#ifdef BOARD_NAME_GRUNT
+/* Grunt-specific (Stoney Ridge / GFX8) GPU Driver Headers */
+#include "drivers/gpu/drm/amd/include/asic_reg/gca/gfx_8_0_d.h"
+#include "drivers/gpu/drm/amd/include/asic_reg/gca/gfx_8_0_sh_mask.h"
+#include "drivers/gpu/drm/amd/include/asic_reg/oss/oss_3_0_sh_mask.h"
+#include "drivers/gpu/drm/amd/include/asic_reg/oss/oss_3_0_d.h"
+#include "drivers/gpu/drm/amd/include/asic_reg/smu/smu_7_1_3_d.h"
+#include "drivers/gpu/drm/amd/include/asic_reg/smu/smu_7_1_3_sh_mask.h"
+
+/* Aliases for GFX8 GRBM Soft Reset Macros to prevent namespace collisions */
+#define GFX8_mmGRBM_SOFT_RESET                      mmGRBM_SOFT_RESET
+#define GFX8_mmGRBM_STATUS                          mmGRBM_STATUS
+#define GFX8_GRBM_SOFT_RESET__SOFT_RESET_CP_MASK    GRBM_SOFT_RESET__SOFT_RESET_CP_MASK
+#define GFX8_GRBM_SOFT_RESET__SOFT_RESET_GFX_MASK   GRBM_SOFT_RESET__SOFT_RESET_GFX_MASK
+#define GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPF_MASK   GRBM_SOFT_RESET__SOFT_RESET_CPF_MASK
+#define GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPC_MASK   GRBM_SOFT_RESET__SOFT_RESET_CPC_MASK
+#define GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPG_MASK   GRBM_SOFT_RESET__SOFT_RESET_CPG_MASK
+#define GFX8_GRBM_SOFT_RESET__SOFT_RESET_RLC_MASK   GRBM_SOFT_RESET__SOFT_RESET_RLC_MASK
+#define GFX8_GRBM_STATUS__CP_BUSY_MASK              GRBM_STATUS__CP_BUSY_MASK
+
+/* Alias SMU Mailbox registers from smu_7_1_3_d.h for Stoney Ridge */
+#define GFX8_mmSMC_MESSAGE_0    mmSMC_MESSAGE_0
+#define GFX8_mmSMC_RESP_0       mmSMC_RESP_0
+#define GFX8_mmSMC_MSG_ARG_0    mmSMC_MSG_ARG_0
+
+
+// aliases for srbm
+#define GFX8_mmSRBM_SOFT_RESET                      mmSRBM_SOFT_RESET
+#define GFX8_SRBM_SOFT_RESET__SOFT_RESET_SDMA_MASK  SRBM_SOFT_RESET__SOFT_RESET_SDMA_MASK
+#define GFX8_SRBM_SOFT_RESET__SOFT_RESET_SDMA1_MASK SRBM_SOFT_RESET__SOFT_RESET_SDMA1_MASK
+#define GFX8_SRBM_SOFT_RESET__SOFT_RESET_IH_MASK    SRBM_SOFT_RESET__SOFT_RESET_IH_MASK
+// gui active isn't given to us by those includes, so we need to define it manually.
+#define GFX8_GRBM_STATUS__GUI_ACTIVE_MASK             0x80000000
+
+#define AMDGPU_ASIC_RESET_DATA                  0x39d5e86b
+
+#define GFX8_mmSMC_IND_INDEX_0         mmSMC_IND_INDEX_0
+#define GFX8_mmSMC_IND_DATA_0          mmSMC_IND_DATA_0
+
+#define GFX8_ixSMC_SYSCON_RESET_CNTL   ixSMC_SYSCON_RESET_CNTL
+#define GFX8_ixSMC_SYSCON_CLOCK_CNTL_0 ixSMC_SYSCON_CLOCK_CNTL_0
+
+/* GFX8 CP Halt Registers and Masks */
+#define GFX8_mmCP_ME_CNTL  mmCP_ME_CNTL
+#define GFX8_mmCP_MEC_CNTL mmCP_MEC_CNTL
+
+#define GFX8_CP_ME_CNTL__ME_HALT_MASK   CP_ME_CNTL__ME_HALT_MASK
+#define GFX8_CP_ME_CNTL__PFP_HALT_MASK  CP_ME_CNTL__PFP_HALT_MASK
+#define GFX8_CP_ME_CNTL__CE_HALT_MASK   CP_ME_CNTL__CE_HALT_MASK
+
+#define GFX8_CP_MEC_CNTL__MEC_ME1_HALT_MASK CP_MEC_CNTL__MEC_ME1_HALT_MASK
+#define GFX8_CP_MEC_CNTL__MEC_ME2_HALT_MASK CP_MEC_CNTL__MEC_ME2_HALT_MASK
+
+/* Global pointer for the intercepted Grunt GPU */
+static struct pci_dev *stoney_gpu_dev = NULL;
+static void __iomem *stoney_mmio_base = NULL;
+#endif
+
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("funtri-vt");
@@ -59,6 +131,44 @@ struct e820_entry {
     uint64_t addr;
     uint64_t size;
     uint32_t type;
+} __attribute__((packed));
+
+/* Coreboot signature "LBIO" (0x4F49424C in little-endian) */
+#define CB_SIGNATURE 0x4F49424C
+#define CB_TAG_MEMORY 0x0001
+#define CB_TAG_FORWARD 0x0011
+
+struct cb_forward {
+    uint32_t tag;
+    uint32_t size;
+    uint64_t forward;
+} __attribute__((packed));
+
+/* Smart-Scan Coreboot Header */
+struct lb_header {
+    uint8_t  signature[4]; /* "LBIO" */
+    uint32_t header_bytes;
+    uint32_t header_checksum;
+    uint32_t table_bytes;
+    uint32_t table_checksum;
+    uint32_t table_entries;
+} __attribute__((packed));
+
+struct lb_record {
+    uint32_t tag;
+    uint32_t size;
+} __attribute__((packed));
+
+struct lb_memory_range {
+    uint64_t start;
+    uint64_t size;
+    uint32_t type;
+} __attribute__((packed));
+
+struct lb_memory {
+    uint32_t tag;
+    uint32_t size;
+    struct lb_memory_range map[0];
 } __attribute__((packed));
 
 /* Declare the labels compiled inside our global assembly block */
@@ -104,6 +214,9 @@ static void free_scatter_buffer(struct scatter_buffer *buf)
     if (buf->virt_addrs) {
         for (i = 0; i < buf->nr_pages; i++) {
             if (buf->virt_addrs[i]) {
+                if (ptr_sme_me_mask && *ptr_sme_me_mask != 0) {
+                    set_memory_encrypted(buf->virt_addrs[i], 1);
+                }
                 free_page(buf->virt_addrs[i]);
             }
         }
@@ -198,6 +311,10 @@ static int load_user_to_scatter_buffer(struct scatter_buffer *buf, const void __
             free_scatter_buffer(buf);
             return -ENOMEM;
         }
+        if ( ptr_sme_me_mask && *ptr_sme_me_mask != 0) {
+            set_memory_decrypted(buf->virt_addrs[i], 1);
+            clflush_cache_range((void *)buf->virt_addrs[i], PAGE_SIZE_4K);
+        }
         
         /* Store physical address for the final jump */
         buf->phys_addrs[i] = virt_to_phys((void *)buf->virt_addrs[i]);
@@ -236,6 +353,121 @@ struct real_boot_params {
     /* 0x2d0 */ uint8_t e820_table[112 * 20];   /* 0x2d0 */
 } __attribute__((packed));
 
+/* Helper 1: Extracts E820 from a verified LBIO table */
+static int extract_e820_from_lbio(void *vaddr, struct real_boot_params *zp)
+{
+    struct lb_header *header = (struct lb_header *)vaddr;
+    uint32_t entries = header->table_entries;
+    void *current_rec = (void *)((unsigned char *)vaddr + header->header_bytes);
+    uint32_t j;
+
+    for (j = 0; j < entries; j++) {
+        struct lb_record *rec = (struct lb_record *)current_rec;
+
+        if (rec->tag == CB_TAG_MEMORY) {
+            struct lb_memory *mem = (struct lb_memory *)rec;
+            int num_ranges = (mem->size - sizeof(struct lb_memory)) / sizeof(struct lb_memory_range);
+            struct e820_entry *e820 = (struct e820_entry *)zp->e820_table;
+            int k;
+
+            if (num_ranges > 112) num_ranges = 112;
+
+            zp->e820_entries = num_ranges;
+
+            for (k = 0; k < num_ranges; k++) {
+                e820[k].addr = mem->map[k].start;
+                e820[k].size = mem->map[k].size;
+                e820[k].type = mem->map[k].type;
+            }
+
+            printk(KERN_INFO "kexec: Populated %d E820 entries directly from Coreboot!\n", num_ranges);
+            return 0; /* Success */
+        }
+        current_rec = (void *)((unsigned char *)current_rec + rec->size);
+    }
+    return -1;
+}
+
+/* Helper 2: Checks if an LBIO table is just a forwarder to high memory */
+static uint64_t check_for_forwarder(void *vaddr)
+{
+    struct lb_header *header = (struct lb_header *)vaddr;
+    uint32_t entries = header->table_entries;
+    void *current_rec = (void *)((unsigned char *)vaddr + header->header_bytes);
+    uint32_t j;
+
+    for (j = 0; j < entries; j++) {
+        struct lb_record *rec = (struct lb_record *)current_rec;
+        if (rec->tag == CB_TAG_FORWARD) {
+            struct cb_forward *fwd = (struct cb_forward *)rec;
+            return fwd->forward;
+        }
+        current_rec = (void *)((unsigned char *)current_rec + rec->size);
+    }
+    return 0;
+}
+
+/* Main Coreboot Scanner */
+static int parse_coreboot_memory(struct real_boot_params *zp)
+{
+    /* Coreboot places its static forwarders in these exact legacy ranges */
+    unsigned long scan_ranges[][2] = {
+        {0x0, 0x1000},          /* 4KB at the very bottom of RAM */
+        {0xF0000, 0x100000}     /* 64KB legacy VGA/BIOS hole */
+    };
+    int i;
+    uint64_t cbmem_target = 0;
+
+    /* Step 1: Scan safe low memory to find the LBIO Forwarder */
+    for (i = 0; i < 2; i++) {
+        unsigned long start_phys = scan_ranges[i][0];
+        unsigned long end_phys = scan_ranges[i][1];
+        unsigned long size = end_phys - start_phys;
+        unsigned long offset;
+
+        /* Map the ENTIRE memory region exactly once, safely page-aligned */
+        void *vaddr_base = memremap(start_phys, size, MEMREMAP_WB);
+        if (!vaddr_base) continue;
+
+        /* Scan through our safely mapped virtual memory in 16-byte steps */
+        for (offset = 0; offset < size; offset += 16) {
+            void *vaddr = (void *)((unsigned char *)vaddr_base + offset);
+            struct lb_header *header = (struct lb_header *)vaddr;
+
+            if (header->signature[0] == 'L' && header->signature[1] == 'B' &&
+                header->signature[2] == 'I' && header->signature[3] == 'O') {
+
+                /* Case A: The full memory map is sitting right here */
+                if (extract_e820_from_lbio(vaddr, zp) == 0) {
+                    memunmap(vaddr_base);
+                    return 0;
+                }
+
+                /* Case B: We found the forwarder pointing to the real table */
+                cbmem_target = check_for_forwarder(vaddr);
+                if (cbmem_target != 0) {
+                    printk(KERN_INFO "kexec: Found Coreboot forwarder to high CBMEM at physical 0x%llx\n", cbmem_target);
+                    break; /* Break inner loop */
+                }
+            }
+        }
+        memunmap(vaddr_base);
+        if (cbmem_target != 0) break; /* Break outer loop */
+    }
+
+    /* Step 2: Teleport exactly to the high memory table */
+    if (cbmem_target != 0) {
+        void *high_vaddr = memremap(cbmem_target, 65536, MEMREMAP_WB);
+        if (high_vaddr) {
+            int ret = extract_e820_from_lbio(high_vaddr, zp);
+            memunmap(high_vaddr);
+            if (ret == 0) return 0;
+        }
+    }
+
+    return -1; /* Failed to find the memory tag */
+}
+
 static int setup_zero_page(void)
 {
     struct real_boot_params *zp = (struct real_boot_params *)zero_page_virt;
@@ -251,21 +483,30 @@ static int setup_zero_page(void)
     memcpy(zp->setup_header, kernel_setup + 0x1f1, 0x9f); // Copy verified standard setup header size
 
 
-    /* --- BARE-METAL UPGRADE: HOST E820 REPLICATION --- */
+    /* --- BARE-METAL UPGRADE: HOST E820 REPLICATION & CBMEM --- */
     host_boot_params = (void *)ptr_kallsyms_lookup_name("boot_params");
-    if (host_boot_params) {
+
+    /* 1. Try the Coreboot Smart Scan First */
+    if (parse_coreboot_memory(zp) == 0) {
+        /* Successfully extracted the ground-truth memory map directly from Coreboot! */
+    }
+    /* 2. Fallback to replicating the host kernel's existing E820 */
+    else if (host_boot_params) {
         memcpy(zp->e820_table, (unsigned char *)host_boot_params + 0x2d0, sizeof(zp->e820_table));
         zp->e820_entries = *(uint8_t *)((unsigned char *)host_boot_params + 0x1e8);
-        printk(KERN_EMERG "kexec: Successfully replicated host E820 memory map (%d entries)\n", zp->e820_entries);
-    } else {
+        printk(KERN_EMERG "kexec: Replicated host E820 memory map (%d entries)\n", zp->e820_entries);
+    }
+    /* 3. Absolute Disaster Fallback: The 256MB Stub */
+    else {
         uint64_t *entry;
         zp->e820_entries = 4;
-        
+        printk(KERN_WARNING "kexec: Could not find boot_params or Coreboot tables. Falling back to 256MB E820 stub!\n");
+
         /* Entry 0: Usable Low RAM */
         entry = (uint64_t *)(zp->e820_table);
         entry[0] = 0x0ULL; entry[1] = 0x9FC00ULL; *((uint32_t *)(entry + 2)) = 1;
 
-        /* Entry 1: Reserved */
+            /* Entry 1: Reserved */
         entry = (uint64_t *)(zp->e820_table + 20);
         entry[0] = 0x9FC00ULL; entry[1] = 0x400ULL; *((uint32_t *)(entry + 2)) = 2;
 
@@ -347,17 +588,16 @@ static void execute_trampoline(void)
     }
 
     /* --- ADVANCED DYNAMIC MEMORY CALCULATOR ---
-     * Scan the active system's E820 tables to calculate the highest usable memory address.
-     * This dynamically configures our translation page directories without allocating unneeded pages.
+     * Scan the zero page E820 table we just built to calculate the highest usable memory address.
      */
-
     uint64_t max_physical_ram = 0x100000000ULL; /* Default fallback: 4 GB */
-    void *host_boot_params = (void *)ptr_kallsyms_lookup_name("boot_params");
-    if (host_boot_params) {
-        uint8_t entries = *(uint8_t *)((unsigned char *)host_boot_params + 0x1e8);
-        struct e820_entry *table = (struct e820_entry *)((unsigned char *)host_boot_params + 0x2d0);
+
+    struct real_boot_params *zp = (struct real_boot_params *)zero_page_virt;
+    if (zp && zp->e820_entries > 0) {
+        uint8_t entries = zp->e820_entries;
+        struct e820_entry *table = (struct e820_entry *)zp->e820_table;
         uint64_t highest_ram_found = 0;
-        
+
         for (i = 0; i < entries; i++) {
             if (table[i].type == 1) { /* E820_TYPE_RAM */
                 uint64_t segment_ceiling = table[i].addr + table[i].size;
@@ -425,6 +665,8 @@ static void execute_trampoline(void)
         return;
     }
 
+    size_t kernel_payload_size = (loaded_kernel.size > kernel_pm_offset) ?
+                              (loaded_kernel.size - kernel_pm_offset) : 0;
     /* BARE-METAL IDENTITY-MAP UPGRADE:
      * Populate only the exact number of required PMD tables dynamically.
      * Maps each segment cleanly up to the system memory ceiling!
@@ -435,17 +677,18 @@ static void execute_trampoline(void)
             uint64_t phys_end = phys_start + 0x200000ULL;
             uint64_t entry_sme = sme_mask;
 
-            uint64_t kernel_start = 0x100000;
-            uint64_t kernel_end = kernel_start + (loaded_kernel.size - kernel_pm_offset);
+            uint64_t kernel_start = 0x100000ULL;
+            uint64_t kernel_end   = kernel_start + kernel_payload_size;
+
+            uint64_t initrd_start = initrd_phys_dest;
+            uint64_t initrd_end   = initrd_phys_dest + loaded_initrd.size;
 
             /* Strip C-bit from ANY 2MB PMD that overlaps with decrypted targets to prevent MCEs */
             if ((low_page_phys >= phys_start && low_page_phys < phys_end) ||
                 (zero_page_phys >= phys_start && zero_page_phys < phys_end) ||
                 (0x10000 >= phys_start && 0x10000 < phys_end) ||
-                (kernel_end > phys_start && kernel_start < phys_end) ||
-                (loaded_initrd.size > 0 &&
-                 (initrd_phys_dest + loaded_initrd.size) > phys_start &&
-                 initrd_phys_dest < phys_end)) {
+                (kernel_payload_size > 0 && kernel_start < phys_end && kernel_end > phys_start) ||
+                (loaded_initrd.size > 0 && initrd_start < phys_end && initrd_end > phys_start)) {
 
                 entry_sme = 0;
             }
@@ -467,13 +710,17 @@ static void execute_trampoline(void)
 
         /* Decrypt trampoline and zero page */
         set_memory_decrypted(low_page_virt, 1);
+        clflush_cache_range((void *)low_page_virt, PAGE_SIZE_4K);
         /* Decrypt low memory targets (0x10000 cmdline, 0x100000 kernel) */
         set_memory_decrypted((unsigned long)phys_to_virt(0x10000), 1);
-        set_memory_decrypted((unsigned long)phys_to_virt(0x100000), kernel_pages);
+        clflush_cache_range(phys_to_virt(0x10000), PAGE_SIZE_4K);
 
+        set_memory_decrypted((unsigned long)phys_to_virt(0x100000), kernel_pages);
+        clflush_cache_range(phys_to_virt(0x100000), kernel_pages * PAGE_SIZE_4K);
         /* Decrypt initrd destination if present */
         if (loaded_initrd.size > 0) {
             set_memory_decrypted((unsigned long)phys_to_virt(initrd_phys_dest), loaded_initrd.nr_pages);
+            clflush_cache_range(phys_to_virt(initrd_phys_dest), loaded_initrd.nr_pages * PAGE_SIZE_4K);
         }
     }
 
@@ -488,18 +735,112 @@ static void execute_trampoline(void)
 
     /* --- PHASE 2: SYSTEM TEARDOWN --- */
     printk(KERN_EMERG "kexec: Quiescing core systems...\n");
+    if (ptr_syscore_shutdown) {
+        printk(KERN_EMERG "kexec: Tearing down syscore...\n");
+        ptr_syscore_shutdown();
+    }
+    printk(KERN_EMERG "kexec: Point of no return. Disabling local IRQs...\n");
+    if (ptr_smp_send_stop) {
+        ptr_smp_send_stop();
+    } else if (ptr_native_stop_other_cpus) {
+        ptr_native_stop_other_cpus(0);
+    }
+    mdelay(100);
+    local_irq_disable();
     if (ptr_lapic_shutdown) {
         printk(KERN_EMERG "kexec: Masking Local APIC Timer...\n");
         ptr_lapic_shutdown();
     }
     
-    printk(KERN_EMERG "kexec: Point of no return. Disabling local IRQs...\n");
-    local_irq_disable();
+#ifdef BOARD_NAME_GRUNT
+    // BEGIN FIXES
+    if (stoney_gpu_dev && stoney_mmio_base) {
+            /* --- 1. HALT THE COMMAND PROCESSORS --- */
+            /* We MUST halt the CP before resetting it, otherwise it will wake up 
+             * during the kexec boot, fetch garbage memory, and fatally page-fault. */
+            void __iomem *cp_me_cntl = stoney_mmio_base + (GFX8_mmCP_ME_CNTL * 4);
+            void __iomem *cp_mec_cntl = stoney_mmio_base + (GFX8_mmCP_MEC_CNTL * 4);
+            u32 halt_tmp;
 
-    if (ptr_syscore_shutdown) {
-        printk(KERN_EMERG "kexec: Tearing down syscore...\n");
-        ptr_syscore_shutdown();
+            printk(KERN_EMERG "kexec: Halting CP ME, PFP, CE, and MEC...\n");
+
+            /* Halt Graphics/Compute CP */
+            halt_tmp = ioread32(cp_me_cntl);
+            halt_tmp |= (GFX8_CP_ME_CNTL__ME_HALT_MASK | 
+                         GFX8_CP_ME_CNTL__PFP_HALT_MASK | 
+                         GFX8_CP_ME_CNTL__CE_HALT_MASK);
+            iowrite32(halt_tmp, cp_me_cntl);
+
+            /* Halt Compute MEC */
+            halt_tmp = ioread32(cp_mec_cntl);
+            halt_tmp |= (GFX8_CP_MEC_CNTL__MEC_ME1_HALT_MASK | 
+                         GFX8_CP_MEC_CNTL__MEC_ME2_HALT_MASK);
+            iowrite32(halt_tmp, cp_mec_cntl);
+
+            (void)ioread32(cp_mec_cntl); /* Flush PCI writes */
+            udelay(50);
+            /* --- BEGIN GRBM SOFT RESET INJECTION --- */
+            /* We are completely atomic here. No IRQs, no other CPUs. */
+
+            /* mmGRBM_SOFT_RESET (DWORD index scaled to byte offset) */
+            void __iomem *grbm_soft_reset = stoney_mmio_base + (GFX8_mmGRBM_SOFT_RESET * 4);
+            /* mmGRBM_STATUS (DWORD index scaled to byte offset) */
+            void __iomem *grbm_status = stoney_mmio_base + (GFX8_mmGRBM_STATUS * 4);            
+
+            u32 grbm_tmp, status_val;
+            int timeout;
+
+            printk(KERN_EMERG "kexec: Performing Read-Modify-Write on GRBM_SOFT_RESET...\n");
+
+            /* 1. READ current register state to preserve other blocks */
+            grbm_tmp = ioread32(grbm_soft_reset);
+            /* 2. MODIFY by OR-ing the required CP and GFX sub-engine bits via macros */
+            grbm_tmp |= (GFX8_GRBM_SOFT_RESET__SOFT_RESET_CP_MASK  |
+                    GFX8_GRBM_SOFT_RESET__SOFT_RESET_GFX_MASK |
+                    GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPF_MASK |
+                    GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPC_MASK |
+                    GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPG_MASK);
+
+            /* 3. WRITE back the asserted state */
+            iowrite32(grbm_tmp, grbm_soft_reset);
+            ioread32(grbm_soft_reset);
+            udelay(50);
+
+            /* 4. DE-ASSERT: Read current state again, clear out the reset bits */
+            grbm_tmp = ioread32(grbm_soft_reset);
+            grbm_tmp &= ~(GFX8_GRBM_SOFT_RESET__SOFT_RESET_CP_MASK  |
+                     GFX8_GRBM_SOFT_RESET__SOFT_RESET_GFX_MASK |
+                     GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPF_MASK |
+                     GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPC_MASK |
+                     GFX8_GRBM_SOFT_RESET__SOFT_RESET_CPG_MASK);
+
+            iowrite32(grbm_tmp, grbm_soft_reset);
+            ioread32(grbm_soft_reset);
+
+            /* 5. HANDSHAKE: Poll mmGRBM_STATUS using clean mask comparisons */
+            timeout = 1000;
+            while (--timeout) {
+                status_val = ioread32(grbm_status);
+                if (!(status_val & GFX8_GRBM_STATUS__CP_BUSY_MASK) &&
+                    !(status_val & GFX8_GRBM_STATUS__GUI_ACTIVE_MASK)) {
+                    printk(KERN_EMERG "kexec: GPU CP and GFX pipelines reported IDLE at loop %d.\n", 1000 - timeout);
+                    break;
+                }
+                udelay(5);
+            }
+
+            if (timeout == 0) {
+                printk(KERN_EMERG "kexec: WARNING - GPU status handshake timed out! Status Reg: 0x%X\n", status_val);
+            } else {
+                printk(KERN_EMERG "kexec: GPU soft-reset completed safely via native macros.\n");
+            }
+
+
+            /* NO iounmap() needed. We are abandoning this kernel. */
+            /* --- END GRBM SOFT RESET INJECTION --- */
     }
+    //END FIXES
+#endif
 
     /* --- PHASE 3: SAFE COPYING (Interrupts OFF, NO malloc/sleep calls allowed) --- */
     
@@ -569,20 +910,15 @@ static void execute_trampoline(void)
     /* Point execution straight to our copied assembly block (offset 32 bytes past the control block) */
     jump_target = low_page_phys + 32;
 
-    /* Blastoff with mandatory hardware cache flush so our physical writes hit main RAM */
-    asm volatile("wbinvd\n\t");
 
-    /* Release our temporary C PMD tracking array cleanly now that the page tables are loaded */
-    kfree(pmds);
+    // don't release, we're jumping to a new kernel anyway so it doesn't matter.'
 
     /* CRITICAL FIX: Pass low_page_phys in %rdi and zero_page_phys in %rsi. 
      * This bypasses RIP-relative calculation discrepancies entirely!
      */
-    unsigned long long delay_counter;
+    /* Write back and invalidate all CPU cache lines to DRAM before disabling paging */
+    asm volatile("wbinvd\n\t" ::: "memory");
 
-    for (delay_counter = 0; delay_counter < 3000000000ULL; delay_counter++) {
-        asm volatile("nop\n\t");
-    }
     asm volatile(
         "cli\n\t"
         "movq %1, %%rdi\n\t"
@@ -638,21 +974,122 @@ static long kexec_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
             ret = setup_zero_page();
             if (ret) return ret;
-
+            mdelay(2000);
             if (ptr_migrate_to_reboot_cpu) ptr_migrate_to_reboot_cpu();
             
+// #ifdef BOARD_NAME_GRUNT
+//             /* BARE-METAL UPGRADE: Find the GPU and store it in our global pointer */
+            stoney_gpu_dev = pci_get_device(0x1002, 0x98E4, NULL);
+            if (stoney_gpu_dev) {
+                if (stoney_gpu_dev->dev.driver) {
+                    printk(KERN_EMERG "kexec: Intercepted AMD GPU! Nullifying shutdown hook...\n");
+                    stoney_gpu_dev->dev.driver->shutdown = NULL;
+                }
+
+                /* Force the kernel to wake the GPU and assign PCI resources */
+                if (pci_enable_device(stoney_gpu_dev)) {
+                    printk(KERN_EMERG "kexec: WARNING - Failed to enable GPU PCI device!\n");
+                } else {
+                    printk(KERN_EMERG "kexec: Successfully enabled GPU PCI device.\n");
+                }
+
+                phys_addr_t mmio_start = 0;
+                resource_size_t mmio_len = 0;
+
+                /* 1. Try standard kernel resource tree (BAR 5 then BAR 2) */
+                if (pci_resource_flags(stoney_gpu_dev, 5) & IORESOURCE_MEM) {
+                    mmio_start = pci_resource_start(stoney_gpu_dev, 5);
+                    mmio_len = pci_resource_len(stoney_gpu_dev, 5);
+                } else if (pci_resource_flags(stoney_gpu_dev, 2) & IORESOURCE_MEM) {
+                    mmio_start = pci_resource_start(stoney_gpu_dev, 2);
+                    mmio_len = pci_resource_len(stoney_gpu_dev, 2);
+                }
+                /* 2. BARE-METAL FALLBACK: Kernel tree is empty. Read the raw PCI config registers! */
+                else {
+                    u32 bar_val;
+                    printk(KERN_EMERG "kexec: Kernel PCI tree empty! Bypassing kernel and reading RAW hardware BARs...\n");
+
+                    /* Try RAW BAR 5 (Offset 0x24) */
+                    pci_read_config_dword(stoney_gpu_dev, PCI_BASE_ADDRESS_5, &bar_val);
+                    if (bar_val && !(bar_val & PCI_BASE_ADDRESS_SPACE_IO)) {
+                        mmio_start = bar_val & PCI_BASE_ADDRESS_MEM_MASK;
+                    } else {
+                        /* Try RAW BAR 2 (Offset 0x18) */
+                        pci_read_config_dword(stoney_gpu_dev, PCI_BASE_ADDRESS_2, &bar_val);
+                        if (bar_val && !(bar_val & PCI_BASE_ADDRESS_SPACE_IO)) {
+                            mmio_start = bar_val & PCI_BASE_ADDRESS_MEM_MASK;
+                            /* Check if BAR 2 is 64-bit and stitch the high bits if needed */
+                            if ((bar_val & PCI_BASE_ADDRESS_MEM_TYPE_MASK) == PCI_BASE_ADDRESS_MEM_TYPE_64) {
+                                u32 bar_val_hi;
+                                pci_read_config_dword(stoney_gpu_dev, PCI_BASE_ADDRESS_2 + 4, &bar_val_hi);
+                                mmio_start |= ((phys_addr_t)bar_val_hi << 32);
+                            }
+                        }
+                    }
+                    /* Standard AMD MMIO window size is 256KB */
+                    mmio_len = 0x40000;
+                }
+
+                if (mmio_start) {
+                    printk(KERN_EMERG "kexec: Pre-mapping GPU MMIO at physical 0x%llx...\n", (unsigned long long)mmio_start);
+                    stoney_mmio_base = ioremap(mmio_start, mmio_len);
+
+                    if (!stoney_mmio_base) {
+                        printk(KERN_EMERG "kexec: WARNING - ioremap failed for GPU MMIO!\n");
+                    }
+                } else {
+                    printk(KERN_EMERG "kexec: FATAL - Could not find MMIO base address in hardware or kernel!\n");
+                }
+            }
+            /* --- AUDIO CO-PROCESSOR & BRIDGE WAKEUP --- */
+            struct pci_dev *audio_dev = NULL;
+            
+            /* Loop through all AMD devices (Vendor 0x1022) */
+            while ((audio_dev = pci_get_device(0x1022, PCI_ANY_ID, audio_dev)) != NULL) {
+                
+                /* Check if it's the Dummy Host Bridge (157d) OR any known Stoney ACP ID */
+                if (audio_dev->device == 0x157d || 
+                    audio_dev->device == 0x157e || 
+                    audio_dev->device == 0x15be || 
+                    audio_dev->device == 0x1579 || 
+                    audio_dev->device == 0x157a) {
+                    
+                    printk(KERN_EMERG "kexec: Found AMD Audio/Bridge [1022:%04x]! Waking...\n", audio_dev->device);
+                    
+                    /* Wake it up physically via the host driver PM */
+                    (void)pm_runtime_get_sync(&audio_dev->dev);
+                    
+                    /* Blindfold the kernel so it doesn't power it back down */
+                    if (audio_dev->dev.driver) {
+                        audio_dev->dev.driver->shutdown = NULL;
+                    }
+                    
+                    /* Force software state to Awake */
+                    pci_set_power_state(audio_dev, PCI_D0);
+                }
+            }
+// #endif
+            mdelay(2000);
             /* BARE-METAL UPGRADE: Re-enabling ptr_device_shutdown to properly shutdown devices.*/
             if (ptr_device_shutdown) ptr_device_shutdown();
             
-            /* Attempt multiple SMP halt fallback strategies */
-            if (ptr_smp_send_stop) {
-                ptr_smp_send_stop();
-            } else if (ptr_native_stop_other_cpus) {
-                ptr_native_stop_other_cpus(0); /* 0 usually implies no indefinite wait */
-            } else {
-                printk(KERN_EMERG "kexec: CRITICAL WARNING! No SMP stop function found! Core 1 may cause MCE.\n");
-            }
-            
+// #ifdef BOARD_NAME_GRUNT
+//             if (stoney_gpu_dev) {
+//                 u16 cmd;
+//                 /* * The native shutdown hook put the SMU to sleep safely, but it also
+//                  * called pci_disable_device() (turning off MMIO) and possibly put the GPU in D3hot.
+//                  * We must wake it up and forcefully re-enable the PCI memory space so
+//                  * our trampoline can access the GRBM!
+//                  */
+//                 pci_set_power_state(stoney_gpu_dev, PCI_D0);
+//                 pci_read_config_word(stoney_gpu_dev, PCI_COMMAND, &cmd);
+//                 if (!(cmd & PCI_COMMAND_MEMORY)) {
+//                     pci_write_config_word(stoney_gpu_dev, PCI_COMMAND, cmd | PCI_COMMAND_MEMORY | PCI_COMMAND_MASTER);
+//                     printk(KERN_EMERG "kexec: Forcefully re-enabled GPU PCI Memory Space for Trampoline.\n");
+//                 }
+//             }
+// #endif
+
             printk(KERN_EMERG "kexec: Waiting for secondary cores to halt...\n");
             mdelay(100);
             
@@ -753,6 +1190,10 @@ int run_hijacked_initialization(void)
         return ret;
     }
     
+#ifdef BOARD_NAME_GRUNT
+    printk(KERN_EMERG "kexec: Compiled for BOARD_NAME_GRUNT.\n");
+#endif
+
     printk(KERN_EMERG "kexec: Module loaded successfully. Device node created.\n");
     return 0;
 }
@@ -789,7 +1230,12 @@ static void __exit dummy_kexec_exit(void)
     free_scatter_buffer(&loaded_kernel);
     free_scatter_buffer(&loaded_initrd);
 
-    if (zero_page_virt) free_page((unsigned long)zero_page_virt);
+    if (zero_page_virt) {
+        if (ptr_sme_me_mask && *ptr_sme_me_mask != 0) {
+            set_memory_encrypted((unsigned long)zero_page_virt, 1);
+        }
+        free_page((unsigned long)zero_page_virt);
+    }
 
     misc_deregister(&kexec_misc_device);
     printk(KERN_EMERG "kexec: Module unloaded.\n");

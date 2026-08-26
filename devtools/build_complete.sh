@@ -174,6 +174,9 @@ else
     ./scripts/config --disable CONFIG_DRM_AMDGPU
     ./scripts/config --disable CONFIG_FRAMEBUFFER_CONSOLE
     
+    ./scripts/config --enable CONFIG_COREBOOT_TABLE
+    ./scripts/config --enable CONFIG_GOOG_COREBOOT_TABLE
+
     # Keep Input enabled in case we add emergency debug shells
     ./scripts/config --enable CONFIG_USB_SUPPORT
     ./scripts/config --enable CONFIG_USB_XHCI_HCD
@@ -302,8 +305,28 @@ fi
 echo ">>> [Phase 8] Compiling Out-Of-Tree Kexec Module & Usermode Loader..."
 cd "$WORKSPACE/oot-kexec-module"
 make clean || true
+# Generate dynamic build header based on target board
+BOARD_HEADER="board_config.h"
 # Pass our explicitly prepared ChromeOS headers path to the Makefile
+# If building for any Stoney Ridge board, pass USE_BOARD_GRUNT=1
+case "$BOARD" in
+    grunt)
+        echo "/* Auto-generated for Stoney Ridge family */" > "$BOARD_HEADER"
+        echo "#define BOARD_NAME_GRUNT 1" >> "$BOARD_HEADER"
+        ;;
+    *)
+        echo "/* Auto-generated generic board configuration */" > "$BOARD_HEADER"
+        ;;
+esac
+
 make KDIR="$HOST_KDIR"
+
+# Safely check the artifact without failing the set -e script
+if strings kexec_mod.ko | grep -q -i "GRBM"; then
+    echo "===> SUCCESS: GRBM GPU reset logic compiled into kexec_mod.ko!"
+else
+    echo "===> WARNING: GRBM GPU reset logic was NOT compiled into kexec_mod.ko!"
+fi
 
 echo "=========================================================="
 echo " [*] DYNAMIC VERIFICATION: FRESH COMPILATION HASH"

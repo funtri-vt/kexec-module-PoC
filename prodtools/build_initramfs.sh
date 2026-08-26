@@ -176,27 +176,21 @@ echo "[AUTOMATON] Relaying detected board id from $BOARD_ID_SRC : $BOARD_ID"
 EXTRA_BOOT_ARGS=""
 
 if [ "$BOARD_ID" = "grunt" ]; then # this might be useful later, but make sure to set them up individually?: || [ "$BOARD_ID" = "zork" ] || [ "$BOARD_ID" = "treeya" ]
-    # --- PHASE 1: GPU BRAIN-WIPE ---
-    echo "[AUTOMATON] Forcing GPU PCI Reset to clear dirty RMA state for $BOARD_ID..."
-    if [ -d /sys/bus/pci/devices/0000:00:01.0 ]; then
-        echo "0000:00:01.0" > /sys/bus/pci/drivers/amdgpu/unbind 2>/dev/null || true
-        echo 1 > /sys/bus/pci/devices/0000:00:01.0/reset 2>/dev/null || true
-        echo "[AUTOMATON] GPU reset pulse sent!"
-    else
-        echo "[AUTOMATON] Warning: GPU 0000:00:01.0 not found!"
-    fi
-
-    # Phase 2: construct boot args to make apuart console work for AMD boards
-    EXTRA_BOOT_ARGS="earlycon=uart8250,mmio32,0xfedc6000,4430n8 console=uart,mmio32,0xfedc6000,4430n8 ignore_loglevel board_id=$BOARD_ID panic=10 pm_async=0"
+    EXTRA_BOOT_ARGS="board_id=$BOARD_ID panic=10 reset_devices amdgpu.noretry=1 iommu=pt amdgpu.gpu_recovery=1 amdgpu.timeout_fatal_disable=1 console=tty1"
 fi
 
 
 # PRODUCTION: Dynamically locate, mount, and kexec into the Debian partition
 echo "[AUTOMATON] Searching for Debian rootfs partition..."
+echo "Sleeping for five seconds to give enumeration time..."
+sleep 5
 TARGET_DEV=""
 for i in $(seq 1 15); do
-    TARGET_DEV=$(blkid -t PARTLABEL="execboot_rootfs:debian" -o device | head -n1)
-    [ -n "$TARGET_DEV" ] && break
+    TARGET_DEV=$(blkid | grep "DEB_ROOT" | head -n1 | cut -d: -f1)
+    if [ -n "$TARGET_DEV" ]; then
+        echo "[AUTOMATON] FOund DEB_ROOT at: $TARGET_DEV"
+        break
+    fi
     sleep 1
 done
 
@@ -209,23 +203,40 @@ echo "[AUTOMATON] Found Debian partition at $TARGET_DEV. Mounting..."
 mkdir -p /mnt/debian
 mount -o ro "$TARGET_DEV" /mnt/debian
 
-TARGET_KERNEL=$(ls /mnt/debian/boot/vmlinuz-* | head -n 1)
-TARGET_INITRD=$(ls /mnt/debian/boot/initrd.img-* | head -n 1)
+TARGET_KERNEL=$(ls /mnt/debian/vmlinuz | head -n 1)
+TARGET_INITRD=$(ls /mnt/debian/initrd.img | head -n 1)
 
 if [ -z "$TARGET_KERNEL" ] || [ -z "$TARGET_INITRD" ]; then
     echo "[-] FATAL: Kernel or Initramfs missing in /boot on $TARGET_DEV!"
     while true; do sleep 1; done
 fi
+echo "[AUTOMATON] Extracting reliable PARTUUID for target device..."
+TARGET_PARTUUID=$(blkid -s PARTUUID -o value "$TARGET_DEV")
+
+if [ -z "$TARGET_PARTUUID" ]; then
+    echo "[-] FATAL: Could not determine PARTUUID for $TARGET_DEV!"
+    while true; do sleep 1; done
+fi
+
+TARGET_UUID=$(blkid -s UUID -o value "$TARGET_DEV")
+
+if [ -z "$TARGET_UUID" ]; then
+    echo "[-] FATAL: Could not determine UUID for $TARGET_DEV!"
+    while true; do sleep 1; done
+fi
 
 echo "[AUTOMATON] Loading kernel: $TARGET_KERNEL"
-# Note: Removed the heavy GPU/display disabling args from here, assuming you want
-# the final Debian system to actually initialize the GPU for the desktop!
+# Note: Added 'rootwait' to allow USB enumeration and switched to 'PARTUUID=' syntax
 /sbin/kexec -l "$TARGET_KERNEL" \
     --initrd="$TARGET_INITRD" \
-    --command-line="root=PARTLABEL=execboot_rootfs:debian rw console=$TARGET_TTY $EXTRA_BOOT_ARGS"
+    --command-line="root=LABEL=DEB_ROOT rootwait rw console=$TARGET_TTY $EXTRA_BOOT_ARGS reset_devices"
 
 echo "[AUTOMATON] Unmounting target partition..."
 umount /mnt/debian
+
+# echo "[AUTOMATON] Cleanly unbinding framebuffers before kexec jump..."
+# echo "efi-framebuffer.0" > /sys/bus/platform/drivers/efi-framebuffer/unbind 2>/dev/null || true
+# echo "simple-framebuffer.0" > /sys/bus/platform/drivers/simple-framebuffer/unbind 2>/dev/null || true
 
 # Execute the native handoff (this properly shuts down the UART!)
 echo "[AUTOMATON] Executing native kexec jump NOW."

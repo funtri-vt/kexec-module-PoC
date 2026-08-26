@@ -11,3 +11,8 @@ This project is a WIP, AI-assisted(for now) attempt at getting kexec support for
 |:------------------|:------------------------|
 |`grunt`            |In progress(priority)    |
 |`octopus`          |In progress(priority)    |
+
+## Board Support Status
+| Target Board Name | Speakers | WiFi | Headphone Jack | X11 | Touchscreen | 
+|:------------------|:---------|:-----|:---------------|:----|:------------|
+|`grunt`            | yes      | yes  | untested       | yes | untested    |

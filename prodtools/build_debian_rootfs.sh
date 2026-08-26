@@ -5,6 +5,8 @@
 set -e
 set -o pipefail
 
+BOARD="$1"
+
 # Dynamically calculate the workspace root folder
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -63,10 +65,10 @@ cleanup() {
 trap cleanup EXIT
 
 # --- STEP 1: CREATE AND FORMAT IMAGE ---
-echo "[*] Step 1: Creating 1.5GB sparse image file..."
+echo "[*] Step 1: Creating 3.5GB sparse image file..."
 # We create a raw ext4 filesystem (no partition table) because it will be dd'd directly into a GPT partition later.
-truncate -s 1500M "$IMAGE_FILE"
-mkfs.ext4 -F -O ^metadata_csum,^has_journal "$IMAGE_FILE"
+truncate -s 3500M "$IMAGE_FILE"
+mkfs.ext4 -F -O ^metadata_csum,^has_journal -L DEB_ROOT "$IMAGE_FILE"
 
 # --- STEP 2: MOUNT IMAGE ---
 echo "[*] Step 2: Mounting image to $MOUNT_DIR..."
@@ -91,7 +93,7 @@ chmod +x "$MOUNT_DIR/tmp/debian_chroot_setup.sh"
 
 echo "  [*] Entering Chroot..."
 # Execute the chroot environment, passing control to the setup script
-chroot "$MOUNT_DIR" /bin/bash /tmp/debian_chroot_setup.sh
+chroot "$MOUNT_DIR" /bin/bash -c '/tmp/debian_chroot_setup.sh "$1"' -- "$BOARD"
 
 echo "  [+] Chroot execution completed successfully."
 

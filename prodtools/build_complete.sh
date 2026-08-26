@@ -173,11 +173,33 @@ else
     ./scripts/config --disable CONFIG_DRM_AMDGPU
     ./scripts/config --disable CONFIG_FRAMEBUFFER_CONSOLE
     
+    ./scripts/config --enable CONFIG_COREBOOT_TABLE
+    ./scripts/config --enable CONFIG_GOOG_COREBOOT_TABLE
+
     # Keep Input enabled in case we add emergency debug shells
     ./scripts/config --enable CONFIG_USB_SUPPORT
     ./scripts/config --enable CONFIG_USB_XHCI_HCD
     ./scripts/config --enable CONFIG_KEYBOARD_CROS_EC
     
+    # 1. Enable Core MMC and Block support
+    ./scripts/config --enable CONFIG_MMC
+    ./scripts/config --enable CONFIG_MMC_BLOCK
+    ./scripts/config --set-val CONFIG_MMC_BLOCK_MINORS 8
+
+    # 2. Enable SDHCI Host Controller Drivers
+    ./scripts/config --enable CONFIG_MMC_SDHCI
+    ./scripts/config --enable CONFIG_MMC_SDHCI_PLTFM
+    ./scripts/config --enable CONFIG_MMC_SDHCI_PCI
+    ./scripts/config --enable CONFIG_MMC_SDHCI_ACPI
+
+    # 3. Enable File System and Partition Support
+    ./scripts/config --enable CONFIG_EXT4_FS
+    ./scripts/config --enable CONFIG_MSDOS_PARTITION
+    ./scripts/config --enable CONFIG_EFI_PARTITION
+
+    # 4. Enable Command Queueing
+    ./scripts/config --enable CONFIG_MMC_CQHCI
+
     make olddefconfig
     make -j"$CORES" bzImage
 fi
@@ -214,6 +236,14 @@ else
     sed -i 's/# CONFIG_STATIC is not set/CONFIG_STATIC=y/' .config
     sed -i 's/CONFIG_TC=y/# CONFIG_TC is not set/' .config
 
+    sed -i 's/^# CONFIG_BLKID is not set/CONFIG_BLKID=y/' .config
+    sed -i 's/^# CONFIG_FEATURE_BLKID_TYPE is not set/CONFIG_FEATURE_BLKID_TYPE=y/' .config
+    sed -i 's/^# CONFIG_VOLUMEID is not set/CONFIG_VOLUMEID=y/' .config
+    sed -i 's/^# CONFIG_FEATURE_VOLUMEID_EXT is not set/CONFIG_FEATURE_VOLUMEID_EXT=y/' .config
+    sed -i 's/^# CONFIG_FEATURE_VOLUMEID_PARTITION is not set/CONFIG_FEATURE_VOLUMEID_PARTITION=y/' .config
+
+    yes "" | make oldconfig
+    
     echo "  [*] Compiling BusyBox binary..."
     make -j"$CORES"
 
@@ -227,8 +257,25 @@ fi
 echo ">>> [Phase 8] Compiling Out-Of-Tree Kexec Module & Usermode Loader..."
 cd "$WORKSPACE/oot-kexec-module"
 make clean || true
-# Pass our explicitly prepared ChromeOS headers path to the Makefile
+# Generate dynamic build header based on target board
+# Force board_config.h to be created in the current working directory absolute path
+BOARD_HEADER="$(pwd)/board_config.h"
+
+case "$BOARD" in
+    grunt)
+        echo "/* Auto-generated for Stoney Ridge family */" > "$BOARD_HEADER"
+        echo "#define BOARD_NAME_GRUNT 1" >> "$BOARD_HEADER"
+        ;;
+    *)
+        echo "/* Auto-generated generic board configuration */" > "$BOARD_HEADER"
+        ;;
+esac
+
+# Flush memory buffers to disk
+sync
+
 make KDIR="$HOST_KDIR"
+
 
 echo "=========================================================="
 echo " [*] DYNAMIC VERIFICATION: FRESH COMPILATION HASH"
@@ -248,7 +295,7 @@ echo ">>> [Phase 9] Assembling nested payloads and injecting into Shim..."
 cd "$WORKSPACE"
 
 # 1. Trigger the packing logic
-bash ./prodtools/final_build_step.sh
+bash ./prodtools/final_build_step.sh "$BOARD"
 
 # 2. Inject to the target shim
 sudo bash ./prodtools/inject_to_shim.sh "$SHIM_IMG_PATH"

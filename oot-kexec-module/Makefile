@@ -1,10 +1,11 @@
 obj-m += kexec_mod.o
 
-# Disable Link-Time Optimization (LTO) to prevent aggressive dead-code elimination
-# from stripping our global init/exit entry points during Kbuild Stage-1.
+# Disable Link-Time Optimization (LTO)
 ccflags-y += -fno-lto
 
-# Point this to the absolute path of the chromeos kernel tree you compiled earlier
+ccflags-y += -I$(srctree)
+
+# Point this to the absolute path of the chromeos kernel tree
 KDIR := ../host_kernel/
 
 all:
@@ -12,3 +13,4 @@ all:
 
 clean:
 	make -C $(KDIR) M=$(PWD) clean
+	rm -f board_config.h
