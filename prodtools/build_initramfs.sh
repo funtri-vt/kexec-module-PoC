@@ -203,8 +203,111 @@ echo "[AUTOMATON] Found Debian partition at $TARGET_DEV. Mounting..."
 mkdir -p /mnt/debian
 mount -o ro "$TARGET_DEV" /mnt/debian
 
-TARGET_KERNEL=$(ls /mnt/debian/vmlinuz | head -n 1)
-TARGET_INITRD=$(ls /mnt/debian/initrd.img | head -n 1)
+CONFIG_FILE="/mnt/debian/etc/default/kexec"
+LOG_FILE="/mnt/debian/var/log/kexec.log"
+EXTRA_KEXEC_ARGS=""
+LINE_FOUND=0
+
+log_err() {
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] ERROR: $1" >&2
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] ERROR: $1" >> "$LOG_FILE" 2>/dev/null
+    sync
+}
+
+# Helper to avoid typing this over and over
+abort_boot() {
+    sync
+    sleep 5
+    reboot
+}
+
+if [ -f "$CONFIG_FILE" ]; then
+    # 1. Security Check using BusyBox stat
+    if command -v stat >/dev/null 2>&1; then
+        FILE_UID=$(stat -c '%u' "$CONFIG_FILE" 2>/dev/null)
+        FILE_PERM=$(stat -c '%a' "$CONFIG_FILE" 2>/dev/null)
+
+        if [ "$FILE_UID" != "0" ]; then
+            log_err "$CONFIG_FILE is not owned by root (UID 0). Aborting."
+            abort_boot
+        fi
+
+        # Reject if group or world has write permissions
+        case "$FILE_PERM" in
+            *2?|*3?|*6?|*7?|*2|*3|*6|*7)
+                log_err "$CONFIG_FILE is group/world writable ($FILE_PERM). Aborting."
+                abort_boot
+                ;;
+        esac
+    fi
+
+    # 2. Parse file line-by-line
+    while IFS= read -r line || [ -n "$line" ]; do
+        # Strip leading spaces and tabs
+        while case "$line" in " "*|'	'*) true;; *) false;; esac; do
+            line="${line#?}"
+        done
+
+        # Strip inline comments
+        case "$line" in
+            *" #"*) line="${line%% #*}" ;;
+            *"	#"*) line="${line%%	#*}" ;;
+        esac
+
+        case "$line" in
+            ""|\#*)
+                continue
+                ;;
+            EXTRA_KEXEC_ARGS=*)
+                if [ "$LINE_FOUND" -eq 1 ]; then
+                    log_err "Multiple EXTRA_KEXEC_ARGS lines found. Aborting."
+                    abort_boot
+                fi
+                LINE_FOUND=1
+
+                RAW_VALUE="${line#EXTRA_KEXEC_ARGS=}"
+
+                # Block command execution/injection characters
+                case "$RAW_VALUE" in
+                    *'`'*|*'$('*|*';'*|*'&'*|*'|'*|*'<'*|*'>'*)
+                        log_err "Forbidden characters detected. Aborting."
+                        abort_boot
+                        ;;
+                esac
+
+                # Strip surrounding quotes
+                case "$RAW_VALUE" in
+                    "\""*'"')
+                        RAW_VALUE="${RAW_VALUE#\"}"
+                        RAW_VALUE="${RAW_VALUE%\"}"
+                        ;;
+                    "'"*"'")
+                        RAW_VALUE="${RAW_VALUE#\'}"
+                        RAW_VALUE="${RAW_VALUE%\'}"
+                        ;;
+                esac
+
+                EXTRA_KEXEC_ARGS="$RAW_VALUE"
+                ;;
+
+            *)
+                log_err "Unexpected entry: '$line'. Aborting."
+                abort_boot
+                ;;
+        esac
+    done < "$CONFIG_FILE"
+fi
+
+# 3. Locate Kernel and Initrd via Debian's default symlinks
+TARGET_KERNEL="/mnt/debian/vmlinuz"
+TARGET_INITRD="/mnt/debian/initrd.img"
+
+if [ ! -e "$TARGET_KERNEL" ] || [ ! -e "$TARGET_INITRD" ]; then
+    log_err "Kernel or Initrd not found at $TARGET_KERNEL / $TARGET_INITRD"
+    abort_boot
+fi
+
+echo "[AUTOMATON] Kernel and Initrd found. Preparing kexec..."
 
 if [ -z "$TARGET_KERNEL" ] || [ -z "$TARGET_INITRD" ]; then
     echo "[-] FATAL: Kernel or Initramfs missing in /boot on $TARGET_DEV!"

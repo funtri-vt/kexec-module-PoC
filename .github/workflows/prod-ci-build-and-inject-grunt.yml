@@ -61,3 +61,9 @@ jobs:
           name: kexec_mod
           path: oot-kexec-module/kexec_mod.ko
           if-no-files-found: error
+      - name: Upload intermediate_initrd Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: intermediate_initrd
+          path: intermediate_initrd.cpio.gz
+          if-no-files-found: error
