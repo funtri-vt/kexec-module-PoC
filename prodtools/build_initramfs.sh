@@ -332,7 +332,7 @@ echo "[AUTOMATON] Loading kernel: $TARGET_KERNEL"
 # Note: Added 'rootwait' to allow USB enumeration and switched to 'PARTUUID=' syntax
 /sbin/kexec -l "$TARGET_KERNEL" \
     --initrd="$TARGET_INITRD" \
-    --command-line="root=LABEL=DEB_ROOT rootwait rw console=$TARGET_TTY $EXTRA_BOOT_ARGS reset_devices"
+    --command-line="root=LABEL=DEB_ROOT rootwait rw console=$TARGET_TTY $EXTRA_BOOT_ARGS reset_devices $EXTRA_KEXEC_ARGS"
 
 echo "[AUTOMATON] Unmounting target partition..."
 umount /mnt/debian
